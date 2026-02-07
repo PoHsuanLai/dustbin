@@ -74,7 +74,6 @@ impl LinuxInfo {
             PackageManager::Unknown => None,
         }
     }
-
 }
 
 fn detect_distro() -> Distro {
