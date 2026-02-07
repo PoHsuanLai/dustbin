@@ -75,25 +75,6 @@ impl LinuxInfo {
         }
     }
 
-    /// Get source definitions for this distro's package manager
-    pub fn package_source_name(&self) -> &'static str {
-        match self.package_manager {
-            PackageManager::Apt => "apt",
-            PackageManager::Dnf | PackageManager::Yum => "dnf",
-            PackageManager::Pacman => "pacman",
-            PackageManager::Zypper => "zypper",
-            PackageManager::Apk => "apk",
-            PackageManager::Xbps => "xbps",
-            PackageManager::Nix => "nix",
-            PackageManager::Portage => "portage",
-            PackageManager::Unknown => "system",
-        }
-    }
-
-    /// Check if systemd user services are available
-    pub fn has_systemd_user(&self) -> bool {
-        self.init_system == InitSystem::Systemd
-    }
 }
 
 fn detect_distro() -> Distro {

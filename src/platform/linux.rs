@@ -2,7 +2,7 @@
 
 #[path = "linux_distro.rs"]
 mod linux_distro;
-pub use linux_distro::{Distro, InitSystem, LinuxInfo, PackageManager};
+pub use linux_distro::{InitSystem, LinuxInfo, PackageManager};
 
 use super::{DaemonManager, ProcessMonitor};
 use anyhow::{Context, Result};
@@ -47,13 +47,11 @@ impl ProcessMonitor for Monitor {
 
         thread::spawn(move || {
             let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    // fatrace output format: "timestamp process(pid): O filename"
-                    // We want to extract the filename from exec events
-                    if let Some(path) = parse_fatrace_line(&line) {
-                        let _ = tx.send(path);
-                    }
+            for line in reader.lines().map_while(Result::ok) {
+                // fatrace output format: "timestamp process(pid): O filename"
+                // We want to extract the filename from exec events
+                if let Some(path) = parse_fatrace_line(&line) {
+                    let _ = tx.send(path);
                 }
             }
         });
