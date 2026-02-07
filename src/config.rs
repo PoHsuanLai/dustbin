@@ -1,0 +1,330 @@
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceDef {
+    /// Name of the source (e.g., "homebrew", "cargo")
+    pub name: String,
+    /// Path pattern to match (if path contains this string, it's this source)
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    /// Use $PATH to discover binaries (default: true)
+    #[serde(default = "default_true")]
+    pub scan_path: bool,
+
+    /// Additional directories to scan (beyond PATH)
+    #[serde(default)]
+    pub extra_scan_dirs: Vec<String>,
+
+    /// Directories to skip (even if in PATH)
+    #[serde(default = "default_skip_dirs")]
+    pub skip_dirs: Vec<String>,
+
+    /// Binary prefixes to ignore when tracking
+    #[serde(default = "default_skip_prefixes")]
+    pub skip_prefixes: Vec<String>,
+
+    /// Source definitions for categorizing binaries
+    #[serde(default = "default_sources")]
+    pub sources: Vec<SourceDef>,
+
+    /// Binaries to ignore in reports (patterns, e.g. "python*-config")
+    #[serde(default)]
+    pub ignore_binaries: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[cfg(target_os = "macos")]
+fn default_skip_dirs() -> Vec<String> {
+    vec![
+        "/usr/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/bin".to_string(),
+        "/sbin".to_string(),
+        "/System".to_string(),
+        "/Library/Apple".to_string(),
+    ]
+}
+
+#[cfg(target_os = "linux")]
+fn default_skip_dirs() -> Vec<String> {
+    vec![
+        "/usr/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/bin".to_string(),
+        "/sbin".to_string(),
+    ]
+}
+
+#[cfg(target_os = "macos")]
+fn default_skip_prefixes() -> Vec<String> {
+    vec![
+        "/usr/libexec/".to_string(),
+        "/System/".to_string(),
+        "/Library/Apple/".to_string(),
+    ]
+}
+
+#[cfg(target_os = "linux")]
+fn default_skip_prefixes() -> Vec<String> {
+    vec!["/usr/libexec/".to_string(), "/usr/lib/".to_string()]
+}
+
+fn default_sources() -> Vec<SourceDef> {
+    // Empty by default - config file will have the actual defaults
+    // This is just for serde deserialization when sources key is missing
+    vec![]
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            scan_path: true,
+            extra_scan_dirs: vec![],
+            skip_dirs: default_skip_dirs(),
+            skip_prefixes: default_skip_prefixes(),
+            sources: Self::default_sources_list(),
+            ignore_binaries: vec![],
+        }
+    }
+}
+
+impl Config {
+    /// Default sources list - used when creating new config file
+    /// Scan system and return only sources that exist
+    pub fn default_sources_list() -> Vec<SourceDef> {
+        let home = dirs::home_dir().unwrap_or_default();
+        let mut sources = Vec::new();
+
+        // All possible sources with their detection paths
+        let candidates: Vec<(&str, Vec<std::path::PathBuf>)> = vec![
+            // macOS
+            (
+                "homebrew",
+                vec![
+                    std::path::PathBuf::from("/opt/homebrew"),
+                    std::path::PathBuf::from("/usr/local/Homebrew"),
+                ],
+            ),
+            // Linux package managers (check by common paths)
+            ("apt", vec![std::path::PathBuf::from("/var/lib/dpkg")]),
+            ("dnf", vec![std::path::PathBuf::from("/var/lib/dnf")]),
+            ("pacman", vec![std::path::PathBuf::from("/var/lib/pacman")]),
+            ("zypper", vec![std::path::PathBuf::from("/var/lib/zypp")]),
+            ("apk", vec![std::path::PathBuf::from("/etc/apk")]),
+            // Universal formats
+            ("snap", vec![std::path::PathBuf::from("/snap/bin")]),
+            (
+                "flatpak",
+                vec![std::path::PathBuf::from("/var/lib/flatpak")],
+            ),
+            // Language package managers
+            ("cargo", vec![home.join(".cargo/bin")]),
+            ("npm", vec![home.join(".npm"), home.join(".nvm")]),
+            ("go", vec![home.join("go/bin")]),
+            ("pip", vec![home.join(".local/bin")]),
+            ("pyenv", vec![home.join(".pyenv")]),
+            ("nix", vec![home.join(".nix-profile")]),
+            ("bun", vec![home.join(".bun")]),
+            ("deno", vec![home.join(".deno")]),
+            ("linuxbrew", vec![home.join(".linuxbrew")]),
+            // General
+            ("opt", vec![std::path::PathBuf::from("/opt")]),
+            ("local", vec![std::path::PathBuf::from("/usr/local/bin")]),
+        ];
+
+        for (name, paths) in candidates {
+            for path in &paths {
+                if path.exists() {
+                    // Use the path pattern for matching
+                    let pattern = path.to_string_lossy().to_string();
+                    // Simplify home paths to relative
+                    let pattern = if let Some(home_str) = home.to_str() {
+                        pattern.replace(home_str, "~")
+                    } else {
+                        pattern
+                    };
+
+                    sources.push(SourceDef {
+                        name: name.to_string(),
+                        path: pattern,
+                    });
+                    break; // Only add each source once
+                }
+            }
+        }
+
+        // Add some path-based patterns that don't need directory existence check
+        #[cfg(target_os = "macos")]
+        {
+            if sources.iter().any(|s| s.name == "homebrew") {
+                sources.push(SourceDef {
+                    name: "homebrew".to_string(),
+                    path: "Cellar".to_string(),
+                });
+            }
+        }
+
+        sources
+    }
+
+    /// Categorize a path to determine its source based on configured patterns
+    pub fn categorize_path(&self, path: &str) -> String {
+        for source in &self.sources {
+            if path.contains(&source.path) {
+                return source.name.clone();
+            }
+        }
+        "other".to_string()
+    }
+
+    /// Load config from file, or create default if not exists
+    pub fn load() -> Result<Self> {
+        let config_path = Self::config_path()?;
+
+        if config_path.exists() {
+            let content = fs::read_to_string(&config_path)?;
+            let config: Config = toml::from_str(&content)?;
+            Ok(config)
+        } else {
+            // Create default config file on first run
+            let config = Config::default();
+            config.save()?;
+            Ok(config)
+        }
+    }
+
+    /// Save config to file
+    pub fn save(&self) -> Result<()> {
+        let config_path = Self::config_path()?;
+
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let content = toml::to_string_pretty(self)?;
+        fs::write(&config_path, content)?;
+        Ok(())
+    }
+
+    /// Get config file path
+    pub fn config_path() -> Result<PathBuf> {
+        let config_dir =
+            dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
+        Ok(config_dir.join("dustbin").join("config.toml"))
+    }
+
+    /// Get all directories to scan
+    pub fn get_scan_dirs(&self) -> Vec<String> {
+        let mut dirs = Vec::new();
+
+        // Add PATH directories if enabled
+        if self.scan_path
+            && let Ok(path_var) = std::env::var("PATH")
+        {
+            for dir in path_var.split(':') {
+                if !self.should_skip_dir(dir) {
+                    dirs.push(dir.to_string());
+                }
+            }
+        }
+
+        // Add extra directories
+        for dir in &self.extra_scan_dirs {
+            if !self.should_skip_dir(dir) {
+                dirs.push(dir.clone());
+            }
+        }
+
+        dirs
+    }
+
+    /// Check if a directory should be skipped
+    pub fn should_skip_dir(&self, dir: &str) -> bool {
+        self.skip_dirs.iter().any(|skip| dir.starts_with(skip))
+    }
+
+    /// Check if a binary should be ignored in reports
+    pub fn should_ignore_binary(&self, binary_name: &str) -> bool {
+        for pattern in &self.ignore_binaries {
+            if pattern.contains('*') {
+                // Simple glob matching
+                let parts: Vec<&str> = pattern.split('*').collect();
+                if parts.len() == 2 {
+                    let (prefix, suffix) = (parts[0], parts[1]);
+                    if binary_name.starts_with(prefix) && binary_name.ends_with(suffix) {
+                        return true;
+                    }
+                }
+            } else if binary_name == pattern {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_ignore_binary_exact() {
+        let mut config = Config::default();
+        config.ignore_binaries = vec!["python3-config".to_string()];
+
+        assert!(config.should_ignore_binary("python3-config"));
+        assert!(!config.should_ignore_binary("python3"));
+        assert!(!config.should_ignore_binary("python3-config-extra"));
+    }
+
+    #[test]
+    fn test_should_ignore_binary_glob() {
+        let mut config = Config::default();
+        config.ignore_binaries = vec!["python*-config".to_string()];
+
+        assert!(config.should_ignore_binary("python3-config"));
+        assert!(config.should_ignore_binary("python-config"));
+        assert!(config.should_ignore_binary("python3.11-config"));
+        assert!(!config.should_ignore_binary("python3"));
+    }
+
+    #[test]
+    fn test_categorize_path() {
+        let mut config = Config::default();
+        config.sources = vec![
+            SourceDef {
+                name: "homebrew".to_string(),
+                path: "/opt/homebrew".to_string(),
+            },
+            SourceDef {
+                name: "cargo".to_string(),
+                path: ".cargo/bin".to_string(),
+            },
+        ];
+
+        assert_eq!(config.categorize_path("/opt/homebrew/bin/git"), "homebrew");
+        assert_eq!(
+            config.categorize_path("/Users/test/.cargo/bin/rustc"),
+            "cargo"
+        );
+        assert_eq!(config.categorize_path("/usr/bin/ls"), "other");
+    }
+
+    #[test]
+    fn test_should_skip_dir() {
+        let config = Config::default();
+
+        assert!(config.should_skip_dir("/usr/bin"));
+        assert!(config.should_skip_dir("/bin"));
+        assert!(!config.should_skip_dir("/opt/homebrew/bin"));
+    }
+}
