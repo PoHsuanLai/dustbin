@@ -1,5 +1,9 @@
 # dustbin
 
+[![CI](https://github.com/PoHsuanLai/dustbin/actions/workflows/ci.yml/badge.svg)](https://github.com/PoHsuanLai/dustbin/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/dustbin.svg)](https://crates.io/crates/dustbin)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Find your dusty binaries — track which installed packages you actually use.
 
 Ever installed a CLI tool, used it once, and forgot about it? `dustbin` tracks every binary execution on your system and shows you which packages are collecting dust.
