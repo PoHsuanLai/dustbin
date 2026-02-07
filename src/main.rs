@@ -788,11 +788,65 @@ fn cmd_config(edit: bool) -> Result<()> {
 
     let content = std::fs::read_to_string(&path)?;
     for line in content.lines() {
-        println!("    {}", line);
+        print!("    ");
+        print_toml_line(line);
+        println!();
     }
     println!();
 
     Ok(())
+}
+
+fn print_toml_line(line: &str) {
+    let trimmed = line.trim();
+
+    // Comment
+    if trimmed.starts_with('#') {
+        print!("{}", style(line).dim());
+        return;
+    }
+
+    // Section header [foo]
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        print!("{}", style(line).cyan().bold());
+        return;
+    }
+
+    // Key = value
+    if let Some(eq_pos) = line.find('=') {
+        let (key, rest) = line.split_at(eq_pos);
+        let value = &rest[1..]; // skip the '='
+        print!("{}", style(key).green());
+        print!("{}", style("=").dim());
+        print_toml_value(value);
+        return;
+    }
+
+    // Fallback
+    print!("{}", line);
+}
+
+fn print_toml_value(value: &str) {
+    let trimmed = value.trim();
+
+    // String value
+    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+    {
+        print!("{}", style(value).yellow());
+    }
+    // Boolean or number
+    else if trimmed == "true" || trimmed == "false" || trimmed.parse::<f64>().is_ok() {
+        print!("{}", style(value).magenta());
+    }
+    // Array start
+    else if trimmed.starts_with('[') {
+        print!("{}", style(value).yellow());
+    }
+    // Other
+    else {
+        print!("{}", style(value).yellow());
+    }
 }
 
 fn cmd_daemon() -> Result<()> {

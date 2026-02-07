@@ -1,12 +1,8 @@
-#![allow(dead_code)]
-
 use crate::config::Config;
 use anyhow::Result;
-use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Scan all directories in PATH and return all executable binaries
 /// Returns: Vec<(binary_path, binary_name, source)>
@@ -114,94 +110,4 @@ fn get_package_name(bin_path: &Path, default_name: &str) -> String {
     }
 
     default_name.to_string()
-}
-
-// ============ Legacy code below (kept for compatibility) ============
-
-pub trait PackageManager {
-    fn name(&self) -> &'static str;
-    fn list_packages(&self) -> Result<Vec<Package>>;
-    fn binary_to_package(&self, path: &Path) -> Option<String>;
-    fn uninstall(&self, package: &str) -> Result<()>;
-}
-
-#[derive(Debug, Clone)]
-pub struct Package {
-    pub name: String,
-    pub manager: String,
-    pub binaries: Vec<String>,
-}
-
-pub struct Homebrew {
-    bin_to_package: HashMap<String, String>,
-}
-
-impl Homebrew {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            bin_to_package: HashMap::new(),
-        })
-    }
-}
-
-impl PackageManager for Homebrew {
-    fn name(&self) -> &'static str {
-        "homebrew"
-    }
-
-    fn list_packages(&self) -> Result<Vec<Package>> {
-        Ok(vec![]) // Now handled by scan_all_binaries
-    }
-
-    fn binary_to_package(&self, path: &Path) -> Option<String> {
-        self.bin_to_package.get(path.to_str()?).cloned()
-    }
-
-    fn uninstall(&self, package: &str) -> Result<()> {
-        let status = Command::new("brew").args(["uninstall", package]).status()?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Failed to uninstall {}", package))
-        }
-    }
-}
-
-pub struct Cargo;
-
-impl Cargo {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl PackageManager for Cargo {
-    fn name(&self) -> &'static str {
-        "cargo"
-    }
-
-    fn list_packages(&self) -> Result<Vec<Package>> {
-        Ok(vec![]) // Now handled by scan_all_binaries
-    }
-
-    fn binary_to_package(&self, path: &Path) -> Option<String> {
-        let cargo_bin = dirs::home_dir()?.join(".cargo/bin");
-        if !path.starts_with(&cargo_bin) {
-            return None;
-        }
-        path.file_name()?.to_str().map(String::from)
-    }
-
-    fn uninstall(&self, package: &str) -> Result<()> {
-        let status = Command::new("cargo")
-            .args(["uninstall", package])
-            .status()?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Failed to uninstall {}", package))
-        }
-    }
 }
