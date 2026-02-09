@@ -4,7 +4,9 @@
 mod linux_distro;
 pub use linux_distro::{InitSystem, LinuxInfo, PackageManager};
 
-use super::{DaemonManager, DylibAnalysis, DylibAnalyzer, DylibDep, LibPackageInfo, ProcessMonitor};
+use super::{
+    DaemonManager, DylibAnalysis, DylibAnalyzer, DylibDep, LibPackageInfo, ProcessMonitor,
+};
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::BufRead;
@@ -438,10 +440,7 @@ impl DylibAnalyzer for Analyzer {
         let output = match output {
             Ok(o) => o,
             Err(_) => {
-                return Ok(DylibAnalysis {
-
-                    libs: vec![],
-                });
+                return Ok(DylibAnalysis { libs: vec![] });
             }
         };
 
@@ -512,9 +511,7 @@ impl DylibAnalyzer for Analyzer {
                 }
             }
             PackageManager::Pacman => {
-                let output = Command::new("pacman")
-                    .args(["-Qi", package_name])
-                    .output();
+                let output = Command::new("pacman").args(["-Qi", package_name]).output();
                 if let Ok(output) = output {
                     if output.status.success() {
                         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -525,9 +522,7 @@ impl DylibAnalyzer for Analyzer {
                 }
             }
             PackageManager::Dnf | PackageManager::Yum | PackageManager::Zypper => {
-                let output = Command::new("rpm")
-                    .args(["-qi", package_name])
-                    .output();
+                let output = Command::new("rpm").args(["-qi", package_name]).output();
                 if let Ok(output) = output {
                     if output.status.success() {
                         let stdout = String::from_utf8_lossy(&output.stdout);

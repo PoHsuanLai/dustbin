@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 /// Scan all directories in PATH and return all executable binaries
 /// Returns: Vec<(binary_path, binary_name, source, resolved_path)>
 /// resolved_path is Some if the binary is a symlink pointing elsewhere
-pub fn scan_all_binaries() -> Result<Vec<(String, String, String, Option<String>)>> {
+pub type BinaryScanResult = (String, String, String, Option<String>);
+
+pub fn scan_all_binaries() -> Result<Vec<BinaryScanResult>> {
     let config = Config::load()?;
     let mut all_binaries = Vec::new();
     let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();

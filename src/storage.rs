@@ -200,10 +200,8 @@ impl Database {
         let mut count = 0u64;
         for path in &paths {
             if !std::path::Path::new(path).exists() {
-                self.conn.execute(
-                    "DELETE FROM binaries WHERE path = ?1",
-                    params![path],
-                )?;
+                self.conn
+                    .execute("DELETE FROM binaries WHERE path = ?1", params![path])?;
                 // Also clean up aliases pointing to this binary
                 self.conn.execute(
                     "DELETE FROM path_aliases WHERE canonical_path = ?1",
@@ -294,21 +292,19 @@ impl Database {
 
     /// Get all binary paths that use a given library
     pub fn get_binaries_using_lib(&self, lib_path: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT binary_path FROM dylib_deps WHERE lib_path = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT binary_path FROM dylib_deps WHERE lib_path = ?1")?;
         let rows = stmt.query_map(params![lib_path], |row| row.get(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     /// Get all resolved library packages: (lib_path, manager, package_name)
     pub fn get_all_lib_packages(&self) -> Result<Vec<(String, String, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT lib_path, manager, package_name FROM lib_packages",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT lib_path, manager, package_name FROM lib_packages")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
@@ -349,11 +345,9 @@ impl Database {
     /// Get all alias paths (resolved symlink targets) as a set.
     /// Used to filter out phantom entries when detecting duplicates.
     pub fn get_all_alias_paths(&self) -> Result<std::collections::HashSet<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT alias_path FROM path_aliases",
-        )?;
+        let mut stmt = self.conn.prepare("SELECT alias_path FROM path_aliases")?;
         let rows = stmt.query_map([], |row| row.get(0))?;
-        rows.collect::<Result<std::collections::HashSet<_>, _>>().map_err(Into::into)
+        rows.collect::<Result<std::collections::HashSet<_>, _>>()
+            .map_err(Into::into)
     }
-
 }

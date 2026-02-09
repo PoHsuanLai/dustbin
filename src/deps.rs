@@ -150,10 +150,7 @@ fn get_file_mtime(path: &str) -> Option<i64> {
         .map(|d| d.as_secs() as i64)
 }
 
-fn build_orphan_report(
-    db: &Database,
-    binaries: &[(String, i64)],
-) -> Result<DepsReport> {
+fn build_orphan_report(db: &Database, binaries: &[(String, i64)]) -> Result<DepsReport> {
     let dusty_paths: HashSet<&str> = binaries
         .iter()
         .filter(|(_, count)| *count == 0)

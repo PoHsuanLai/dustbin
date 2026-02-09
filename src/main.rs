@@ -412,15 +412,39 @@ fn cmd_report(
     let use_pager = all && console::Term::stdout().is_term();
 
     if use_pager {
-        let output = format_report_table(&rows, total_active, total_low, total_dusty, all, has_explicit_filter, effective_limit, display_count, total_count);
+        let output = format_report_table(
+            &rows,
+            total_active,
+            total_low,
+            total_dusty,
+            all,
+            has_explicit_filter,
+            effective_limit,
+            display_count,
+            total_count,
+        );
         print_with_pager(&output);
     } else {
-        print!("{}", format_report_table(&rows, total_active, total_low, total_dusty, all, has_explicit_filter, effective_limit, display_count, total_count));
+        print!(
+            "{}",
+            format_report_table(
+                &rows,
+                total_active,
+                total_low,
+                total_dusty,
+                all,
+                has_explicit_filter,
+                effective_limit,
+                display_count,
+                total_count
+            )
+        );
     }
 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn format_report_table(
     rows: &[BinaryJson],
     total_active: usize,
@@ -439,8 +463,12 @@ fn format_report_table(
 
     macro_rules! s {
         ($expr:expr) => {
-            if is_term { $expr.force_styling(true) } else { $expr }
-        }
+            if is_term {
+                $expr.force_styling(true)
+            } else {
+                $expr
+            }
+        };
     }
 
     writeln!(out).unwrap();
@@ -451,7 +479,8 @@ fn format_report_table(
         s!(style("Source").bold().underlined()),
         s!(style("Count").bold().underlined()),
         s!(style("Last Used").bold().underlined())
-    ).unwrap();
+    )
+    .unwrap();
     writeln!(out).unwrap();
 
     for row in rows {
@@ -474,7 +503,8 @@ fn format_report_table(
             out,
             "  {} {:>10} {} {:>16}",
             path_styled, source_str, count_styled, last_used
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     writeln!(out).unwrap();
@@ -482,10 +512,20 @@ fn format_report_table(
     // Summary line
     write!(out, "  ").unwrap();
     if total_active > 0 {
-        write!(out, "{} active  ", s!(style(format!("{}", total_active)).green())).unwrap();
+        write!(
+            out,
+            "{} active  ",
+            s!(style(format!("{}", total_active)).green())
+        )
+        .unwrap();
     }
     if total_low > 0 {
-        write!(out, "{} low  ", s!(style(format!("{}", total_low)).yellow())).unwrap();
+        write!(
+            out,
+            "{} low  ",
+            s!(style(format!("{}", total_low)).yellow())
+        )
+        .unwrap();
     }
     if total_dusty > 0 {
         write!(out, "{} dusty", s!(style(format!("{}", total_dusty)).red())).unwrap();
@@ -500,7 +540,8 @@ fn format_report_table(
             total_dusty,
             s!(style("--dust").cyan()),
             s!(style("--all").cyan())
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     if effective_limit > 0 && display_count < total_count && (all || has_explicit_filter) {
@@ -510,7 +551,8 @@ fn format_report_table(
             s!(style("◦").dim()),
             total_count - display_count,
             s!(style("--all").cyan())
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     writeln!(out).unwrap();
@@ -801,10 +843,10 @@ fn build_package_groups(
             }
 
             // Source filter
-            if let Some(sf) = source_filter {
-                if b.source.as_ref().map(|s| s.as_str()) != Some(sf) {
-                    return false;
-                }
+            if let Some(sf) = source_filter
+                && b.source.as_deref() != Some(sf)
+            {
+                return false;
             }
 
             // Include if dusty
@@ -847,7 +889,11 @@ fn build_package_groups(
         })
         .collect();
 
-    result.sort_by(|a, b| a.source.cmp(&b.source).then(a.package_name.cmp(&b.package_name)));
+    result.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then(a.package_name.cmp(&b.package_name))
+    });
     result
 }
 
@@ -874,16 +920,14 @@ fn cmd_clean(dry_run: bool, stale: Option<u32>, source_filter: Option<String>) -
         let all_groups = build_package_groups(binaries, None, None, &config);
         if all_groups.is_empty() {
             println!();
-            println!(
-                "  {} No packages to clean!",
-                style("●").green().bold()
-            );
+            println!("  {} No packages to clean!", style("●").green().bold());
             println!();
             return Ok(());
         }
 
         // Count by source
-        let mut by_source: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        let mut by_source: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
         for g in &all_groups {
             *by_source.entry(g.source.as_str()).or_default() += 1;
         }
@@ -927,10 +971,7 @@ fn cmd_clean(dry_run: bool, stale: Option<u32>, source_filter: Option<String>) -
 
     if groups.is_empty() {
         println!();
-        println!(
-            "  {} No packages to clean!",
-            style("●").green().bold()
-        );
+        println!("  {} No packages to clean!", style("●").green().bold());
         println!();
         return Ok(());
     }
@@ -961,7 +1002,11 @@ fn cmd_clean(dry_run: bool, stale: Option<u32>, source_filter: Option<String>) -
         let is_term = console::Term::stdout().is_term();
         macro_rules! s {
             ($expr:expr) => {
-                if is_term { $expr.force_styling(true) } else { $expr }
+                if is_term {
+                    $expr.force_styling(true)
+                } else {
+                    $expr
+                }
             };
         }
 
@@ -986,7 +1031,12 @@ fn cmd_clean(dry_run: bool, stale: Option<u32>, source_filter: Option<String>) -
             .ok();
         }
         writeln!(buf).ok();
-        writeln!(buf, "  {} Dry run -- no changes made", s!(style("●").yellow())).ok();
+        writeln!(
+            buf,
+            "  {} Dry run -- no changes made",
+            s!(style("●").yellow())
+        )
+        .ok();
         writeln!(buf).ok();
 
         let fits = terminal_fit(8);
@@ -1204,10 +1254,7 @@ fn cmd_clean(dry_run: bool, stale: Option<u32>, source_filter: Option<String>) -
                             continue;
                         }
 
-                        println!(
-                            "  Running: {}",
-                            style(format!("rm -rf {}", root)).cyan()
-                        );
+                        println!("  Running: {}", style(format!("rm -rf {}", root)).cyan());
                         if std::fs::remove_dir_all(root).is_ok() {
                             println!("  {} Removed {}", style("●").green(), root);
                             total_removed += 1;
@@ -1259,7 +1306,8 @@ fn cmd_config(edit: bool) -> Result<()> {
     let path = Config::config_path()?;
 
     if edit {
-        let editor = std::env::var("EDITOR").unwrap_or_else(|_| defaults::DEFAULT_EDITOR.to_string());
+        let editor =
+            std::env::var("EDITOR").unwrap_or_else(|_| defaults::DEFAULT_EDITOR.to_string());
         Command::new(&editor)
             .arg(&path)
             .status()
@@ -1326,20 +1374,12 @@ fn print_toml_line(line: &str) {
 fn print_toml_value(value: &str) {
     let trimmed = value.trim();
 
-    // Boolean
-    if trimmed == "true" || trimmed == "false" {
+    // Boolean or number
+    if trimmed == "true" || trimmed == "false" || trimmed.parse::<f64>().is_ok() {
         print!("{}", style(value).magenta());
     }
-    // Number
-    else if trimmed.parse::<f64>().is_ok() {
-        print!("{}", style(value).magenta());
-    }
-    // Empty array
-    else if trimmed == "[]" {
-        print!("{}", style(value).dim());
-    }
-    // Array start
-    else if trimmed == "[" {
+    // Empty array or array start
+    else if trimmed == "[]" || trimmed == "[" {
         print!("{}", style(value).dim());
     }
     // Strings and other values
@@ -1454,10 +1494,7 @@ fn cmd_dupes(name: Option<String>, expand: bool, json: bool) -> Result<()> {
 
     // Detail mode: show expanded view for a specific binary
     if let Some(ref filter_name) = name {
-        let matching: Vec<_> = dupes
-            .iter()
-            .filter(|(n, _)| n == filter_name)
-            .collect();
+        let matching: Vec<_> = dupes.iter().filter(|(n, _)| n == filter_name).collect();
 
         if matching.is_empty() {
             println!();
@@ -1492,8 +1529,12 @@ fn cmd_dupes(name: Option<String>, expand: bool, json: bool) -> Result<()> {
 
         macro_rules! s {
             ($expr:expr) => {
-                if is_term { $expr.force_styling(true) } else { $expr }
-            }
+                if is_term {
+                    $expr.force_styling(true)
+                } else {
+                    $expr
+                }
+            };
         }
 
         writeln!(
@@ -1502,7 +1543,8 @@ fn cmd_dupes(name: Option<String>, expand: bool, json: bool) -> Result<()> {
             s!(style("●").yellow()),
             s!(style(total_groups).yellow()),
             s!(style(total_redundant).yellow())
-        ).unwrap();
+        )
+        .unwrap();
         writeln!(out).unwrap();
 
         if is_term {
@@ -1571,12 +1613,20 @@ fn cmd_dupes(name: Option<String>, expand: bool, json: bool) -> Result<()> {
     println!();
 
     if limit > 0 && dupes.len() > limit {
-        let with_active = dupes.iter().filter(|(_, c)| c.iter().any(|b| b.count > 0)).count();
+        let with_active = dupes
+            .iter()
+            .filter(|(_, c)| c.iter().any(|b| b.count > 0))
+            .count();
         println!(
             "  {} {} more ({} with active winner)",
             style("◦").dim(),
             dupes.len() - limit,
-            with_active.saturating_sub(shown.iter().filter(|(_, c)| c.iter().any(|b| b.count > 0)).count())
+            with_active.saturating_sub(
+                shown
+                    .iter()
+                    .filter(|(_, c)| c.iter().any(|b| b.count > 0))
+                    .count()
+            )
         );
     }
 
@@ -1599,13 +1649,22 @@ fn cmd_dupes(name: Option<String>, expand: bool, json: bool) -> Result<()> {
 
 /// Write expanded detail view for one duplicate group to a buffer.
 /// `force_colors` should be true when output is destined for a pager.
-fn write_dupe_expanded(out: &mut String, name: &str, copies: &[storage::BinaryRecord], force_colors: bool) {
+fn write_dupe_expanded(
+    out: &mut String,
+    name: &str,
+    copies: &[storage::BinaryRecord],
+    force_colors: bool,
+) {
     use std::fmt::Write;
 
     macro_rules! s {
         ($expr:expr) => {
-            if force_colors { $expr.force_styling(true) } else { $expr }
-        }
+            if force_colors {
+                $expr.force_styling(true)
+            } else {
+                $expr
+            }
+        };
     }
 
     writeln!(out, "  {}", s!(style(name).bold())).unwrap();
@@ -1631,7 +1690,8 @@ fn write_dupe_expanded(out: &mut String, name: &str, copies: &[storage::BinaryRe
                 source_str,
                 s!(style(c.count).green()),
                 last_used
-            ).unwrap();
+            )
+            .unwrap();
         } else {
             let count_styled = if c.count == 0 {
                 s!(style(format!("{}", c.count)).red())
@@ -1646,7 +1706,8 @@ fn write_dupe_expanded(out: &mut String, name: &str, copies: &[storage::BinaryRe
                 s!(style(source_str).dim()),
                 count_styled,
                 s!(style(&last_used).dim())
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
     writeln!(out).unwrap();
@@ -1659,12 +1720,7 @@ fn print_dupe_expanded(name: &str, copies: &[storage::BinaryRecord]) {
     print!("{}", out);
 }
 
-fn cmd_deps(
-    orphans_only: bool,
-    binary: Option<String>,
-    refresh: bool,
-    json: bool,
-) -> Result<()> {
+fn cmd_deps(orphans_only: bool, binary: Option<String>, refresh: bool, json: bool) -> Result<()> {
     let db = Database::open()?;
     sync_binaries(&db)?;
 
@@ -1713,11 +1769,7 @@ fn cmd_deps(
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(&lib.lib_path);
-            println!(
-                "  {:<50} {}",
-                style(lib_name).dim(),
-                pkg_display
-            );
+            println!("  {:<50} {}", style(lib_name).dim(), pkg_display);
         }
 
         println!();
@@ -1728,17 +1780,21 @@ fn cmd_deps(
     let term = console::Term::stderr();
     let dots = [".", "..", "..."];
     let _ = term.hide_cursor();
-    let report = deps::analyze_deps(&db, refresh, Some(&|current, total| {
-        let dot = dots[current % dots.len()];
-        let msg = format!(
-            "  {} {}/{}{}",
-            style("Analyzing dependencies").cyan(),
-            style(current).bold(),
-            style(total).bold(),
-            dot,
-        );
-        let _ = term.write_str(&format!("\r{:<70}", msg));
-    }))?;
+    let report = deps::analyze_deps(
+        &db,
+        refresh,
+        Some(&|current, total| {
+            let dot = dots[current % dots.len()];
+            let msg = format!(
+                "  {} {}/{}{}",
+                style("Analyzing dependencies").cyan(),
+                style(current).bold(),
+                style(total).bold(),
+                dot,
+            );
+            let _ = term.write_str(&format!("\r{:<70}", msg));
+        }),
+    )?;
     let _ = term.show_cursor();
     let _ = term.write_str(&format!("\r{:<70}\r", ""));
 
@@ -1818,7 +1874,9 @@ fn cmd_deps(
     println!(
         "  {} Total freeable: {}",
         style("●").green(),
-        style(format_bytes(report.total_freeable_bytes)).green().bold()
+        style(format_bytes(report.total_freeable_bytes))
+            .green()
+            .bold()
     );
     println!();
 
@@ -1930,11 +1988,11 @@ fn detect_install_roots(paths: &[&str]) -> Vec<String> {
             if path.starts_with(anchor.as_str()) {
                 // Take the first component after the anchor
                 let rest = &path[anchor.len()..];
-                if let Some(first_component) = rest.split('/').next() {
-                    if !first_component.is_empty() {
-                        roots.insert(format!("{}{}", anchor, first_component));
-                        break;
-                    }
+                if let Some(first_component) = rest.split('/').next()
+                    && !first_component.is_empty()
+                {
+                    roots.insert(format!("{}{}", anchor, first_component));
+                    break;
                 }
             }
         }

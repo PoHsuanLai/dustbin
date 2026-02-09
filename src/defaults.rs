@@ -122,9 +122,7 @@ pub const SOURCE_CANDIDATES: &[SourceCandidate] = &[
 /// Format: (source_name, path_pattern, requires_source) — only added if
 /// `requires_source` is already present in the detected sources.
 #[cfg(target_os = "macos")]
-pub const EXTRA_PATH_PATTERNS: &[(&str, &str, &str)] = &[
-    ("homebrew", "Cellar", "homebrew"),
-];
+pub const EXTRA_PATH_PATTERNS: &[(&str, &str, &str)] = &[("homebrew", "Cellar", "homebrew")];
 
 #[cfg(target_os = "linux")]
 pub const EXTRA_PATH_PATTERNS: &[(&str, &str, &str)] = &[];

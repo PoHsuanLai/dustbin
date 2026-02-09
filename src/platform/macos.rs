@@ -1,6 +1,8 @@
 //! macOS-specific implementation using eslogger and launchd
 
-use super::{DaemonManager, DylibAnalysis, DylibAnalyzer, DylibDep, LibPackageInfo, ProcessMonitor};
+use super::{
+    DaemonManager, DylibAnalysis, DylibAnalyzer, DylibDep, LibPackageInfo, ProcessMonitor,
+};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
@@ -213,23 +215,17 @@ pub struct Analyzer;
 
 impl DylibAnalyzer for Analyzer {
     fn analyze_binary(binary_path: &str) -> Result<DylibAnalysis> {
-        let output = Command::new("otool")
-            .args(["-L", binary_path])
-            .output();
+        let output = Command::new("otool").args(["-L", binary_path]).output();
 
         let output = match output {
             Ok(o) => o,
             Err(_) => {
-                return Ok(DylibAnalysis {
-                    libs: vec![],
-                });
+                return Ok(DylibAnalysis { libs: vec![] });
             }
         };
 
         if !output.status.success() {
-            return Ok(DylibAnalysis {
-                libs: vec![],
-            });
+            return Ok(DylibAnalysis { libs: vec![] });
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -281,14 +277,14 @@ impl DylibAnalyzer for Analyzer {
         for prefix in &["/opt/homebrew/Cellar", "/usr/local/Cellar"] {
             let cellar_path = format!("{}/{}", prefix, package_name);
             let output = Command::new("du").args(["-sk", &cellar_path]).output();
-            if let Ok(output) = output {
-                if output.status.success() {
-                    let line = String::from_utf8_lossy(&output.stdout);
-                    if let Some(size_str) = line.split_whitespace().next() {
-                        if let Ok(kb) = size_str.parse::<u64>() {
-                            return Ok(Some(kb * 1024));
-                        }
-                    }
+            if let Ok(output) = output
+                && output.status.success()
+            {
+                let line = String::from_utf8_lossy(&output.stdout);
+                if let Some(size_str) = line.split_whitespace().next()
+                    && let Ok(kb) = size_str.parse::<u64>()
+                {
+                    return Ok(Some(kb * 1024));
                 }
             }
         }
