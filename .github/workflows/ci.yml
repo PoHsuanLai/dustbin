@@ -95,11 +95,11 @@ jobs:
       - name: Package
         run: |
           cd target/${{ matrix.target }}/release
-          tar -czvf dustbin-${{ github.ref_name }}-${{ matrix.target }}.tar.gz dustbin
-          mv dustbin-*.tar.gz ../../../
+          tar -czvf dusty-${{ github.ref_name }}-${{ matrix.target }}.tar.gz dusty
+          mv dusty-*.tar.gz ../../../
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dustbin-${{ matrix.target }}
-          path: dustbin-*.tar.gz
+          name: dusty-${{ matrix.target }}
+          path: dusty-*.tar.gz

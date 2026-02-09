@@ -1,12 +1,12 @@
-# dustbin
+# dusty
 
-[![CI](https://github.com/PoHsuanLai/dustbin/actions/workflows/ci.yml/badge.svg)](https://github.com/PoHsuanLai/dustbin/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/dustbin.svg)](https://crates.io/crates/dustbin)
+[![CI](https://github.com/PoHsuanLai/dusty/actions/workflows/ci.yml/badge.svg)](https://github.com/PoHsuanLai/dusty/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/dusty.svg)](https://crates.io/crates/dusty)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Find your dusty binaries — track which installed packages you actually use.
 
-Ever installed a CLI tool, used it once, and forgot about it? `dustbin` tracks every binary execution on your system and shows you which packages are collecting dust.
+Ever installed a CLI tool, used it once, and forgot about it? `dusty` tracks every binary execution on your system and shows you which packages are collecting dust.
 
 ## Features
 
@@ -19,26 +19,26 @@ Ever installed a CLI tool, used it once, and forgot about it? `dustbin` tracks e
 ## Installation
 
 ```bash
-cargo install dustbin
+cargo install dusty
 ```
 
 ## Quick Start
 
 ```bash
 # Check status and start tracking
-dustbin status
+dusty status
 
 # View usage statistics
-dustbin stats
+dusty stats
 
 # Show dusty (never used) binaries
-dustbin report --dust
+dusty report --dust
 
 # Show packages not used in 30 days
-dustbin report --stale 30
+dusty report --stale 30
 
 # Interactive cleanup
-dustbin clean
+dusty clean
 ```
 
 ## Usage
@@ -47,31 +47,31 @@ dustbin clean
 
 | Command | Description |
 |---------|-------------|
-| `dustbin status` | Show daemon status and tracking info |
-| `dustbin stats` | Show summary statistics with visual charts |
-| `dustbin report` | Show detailed usage report |
-| `dustbin clean` | Interactively remove unused packages |
-| `dustbin config` | Show or edit configuration |
-| `dustbin start` | Manually start the tracking daemon |
-| `dustbin stop` | Stop the tracking daemon |
+| `dusty status` | Show daemon status and tracking info |
+| `dusty stats` | Show summary statistics with visual charts |
+| `dusty report` | Show detailed usage report |
+| `dusty clean` | Interactively remove unused packages |
+| `dusty config` | Show or edit configuration |
+| `dusty start` | Manually start the tracking daemon |
+| `dusty stop` | Stop the tracking daemon |
 
 ### Report Options
 
 ```bash
-dustbin report              # Top 20 binaries by usage
-dustbin report --dust       # Only unused binaries (count = 0)
-dustbin report --low 5      # Binaries with < 5 uses
-dustbin report --stale 30   # Not used in 30 days
-dustbin report --source homebrew  # Filter by source
-dustbin report --all        # Show all (no limit)
-dustbin report --json       # JSON output for scripting
-dustbin report --export     # Output uninstall commands
+dusty report              # Top 20 binaries by usage
+dusty report --dust       # Only unused binaries (count = 0)
+dusty report --low 5      # Binaries with < 5 uses
+dusty report --stale 30   # Not used in 30 days
+dusty report --source homebrew  # Filter by source
+dusty report --all        # Show all (no limit)
+dusty report --json       # JSON output for scripting
+dusty report --export     # Output uninstall commands
 ```
 
 ### Stats
 
 ```
-  📦  dustbin
+  📦  dusty
   ────────────────────────────────────────
 
   Tracking for 45 days
@@ -93,8 +93,8 @@ dustbin report --export     # Output uninstall commands
 ## Configuration
 
 Config file location:
-- macOS: `~/Library/Application Support/dustbin/config.toml`
-- Linux: `~/.config/dustbin/config.toml`
+- macOS: `~/Library/Application Support/dusty/config.toml`
+- Linux: `~/.config/dusty/config.toml`
 
 ```toml
 scan_path = true
