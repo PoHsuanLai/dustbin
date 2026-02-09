@@ -9,6 +9,9 @@ pub struct SourceDef {
     pub name: String,
     /// Path pattern to match (if path contains this string, it's this source)
     pub path: String,
+    /// Uninstall command (e.g., "brew uninstall", "cargo uninstall")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uninstall_cmd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,79 +104,48 @@ impl Config {
     /// Default sources list - used when creating new config file
     /// Scan system and return only sources that exist
     pub fn default_sources_list() -> Vec<SourceDef> {
+        use crate::defaults::{EXTRA_PATH_PATTERNS, SOURCE_CANDIDATES};
+
         let home = dirs::home_dir().unwrap_or_default();
+        let home_str = home.to_str().unwrap_or("");
         let mut sources = Vec::new();
 
-        // All possible sources with their detection paths
-        let candidates: Vec<(&str, Vec<std::path::PathBuf>)> = vec![
-            // macOS
-            (
-                "homebrew",
-                vec![
-                    std::path::PathBuf::from("/opt/homebrew"),
-                    std::path::PathBuf::from("/usr/local/Homebrew"),
-                ],
-            ),
-            // Linux package managers (check by common paths)
-            ("apt", vec![std::path::PathBuf::from("/var/lib/dpkg")]),
-            ("dnf", vec![std::path::PathBuf::from("/var/lib/dnf")]),
-            ("pacman", vec![std::path::PathBuf::from("/var/lib/pacman")]),
-            ("zypper", vec![std::path::PathBuf::from("/var/lib/zypp")]),
-            ("apk", vec![std::path::PathBuf::from("/etc/apk")]),
-            // Universal formats
-            ("snap", vec![std::path::PathBuf::from("/snap/bin")]),
-            (
-                "flatpak",
-                vec![std::path::PathBuf::from("/var/lib/flatpak")],
-            ),
-            // Language package managers
-            ("cargo", vec![home.join(".cargo/bin")]),
-            ("npm", vec![home.join(".npm"), home.join(".nvm")]),
-            ("go", vec![home.join("go/bin")]),
-            ("pip", vec![home.join(".local/bin")]),
-            ("pyenv", vec![home.join(".pyenv")]),
-            ("nix", vec![home.join(".nix-profile")]),
-            ("bun", vec![home.join(".bun")]),
-            ("deno", vec![home.join(".deno")]),
-            ("linuxbrew", vec![home.join(".linuxbrew")]),
-            // General
-            ("opt", vec![std::path::PathBuf::from("/opt")]),
-            ("local", vec![std::path::PathBuf::from("/usr/local/bin")]),
-        ];
-
-        for (name, paths) in candidates {
-            for path in &paths {
-                if path.exists() {
-                    // Use the path pattern for matching
-                    let pattern = path.to_string_lossy().to_string();
-                    // Simplify home paths to relative
-                    let pattern = if let Some(home_str) = home.to_str() {
-                        pattern.replace(home_str, "~")
-                    } else {
-                        pattern
-                    };
-
+        for candidate in SOURCE_CANDIDATES {
+            for detect_path in candidate.detect_paths {
+                let expanded = detect_path.replace('~', home_str);
+                if std::path::Path::new(&expanded).exists() {
+                    // Simplify back to ~ for config display
+                    let pattern = expanded.replace(home_str, "~");
                     sources.push(SourceDef {
-                        name: name.to_string(),
+                        name: candidate.name.to_string(),
                         path: pattern,
+                        uninstall_cmd: candidate.uninstall_cmd.map(|s| s.to_string()),
                     });
-                    break; // Only add each source once
+                    break;
                 }
             }
         }
 
-        // Add some path-based patterns that don't need directory existence check
-        #[cfg(target_os = "macos")]
-        {
-            if sources.iter().any(|s| s.name == "homebrew") {
+        // Extra path patterns that don't need existence checks
+        for &(name, pattern, requires) in EXTRA_PATH_PATTERNS {
+            if sources.iter().any(|s| s.name == requires) {
                 sources.push(SourceDef {
-                    name: "homebrew".to_string(),
-                    path: "Cellar".to_string(),
+                    name: name.to_string(),
+                    path: pattern.to_string(),
+                    uninstall_cmd: None,
                 });
             }
         }
 
         sources
+    }
+
+    /// Get the uninstall command for a source from config.
+    pub fn get_uninstall_cmd(&self, source_name: &str) -> Option<String> {
+        self.sources
+            .iter()
+            .find(|s| s.name == source_name)
+            .and_then(|s| s.uninstall_cmd.clone())
     }
 
     /// Categorize a path to determine its source based on configured patterns
@@ -219,7 +191,7 @@ impl Config {
     pub fn config_path() -> Result<PathBuf> {
         let config_dir =
             dirs::config_dir().ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?;
-        Ok(config_dir.join("dustbin").join("config.toml"))
+        Ok(config_dir.join("dusty").join("config.toml"))
     }
 
     /// Get all directories to scan
@@ -304,10 +276,12 @@ mod tests {
             SourceDef {
                 name: "homebrew".to_string(),
                 path: "/opt/homebrew".to_string(),
+                uninstall_cmd: None,
             },
             SourceDef {
                 name: "cargo".to_string(),
                 path: ".cargo/bin".to_string(),
+                uninstall_cmd: None,
             },
         ];
 

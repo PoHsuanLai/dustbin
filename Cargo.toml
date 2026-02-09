@@ -1,10 +1,10 @@
 [package]
-name = "dustbin"
+name = "dusty"
 version = "0.1.0"
 edition = "2024"
 description = "Find your dusty binaries - track which installed packages you actually use"
 license = "MIT"
-repository = "https://github.com/PoHsuanLai/dustbin"
+repository = "https://github.com/PoHsuanLai/dusty"
 readme = "README.md"
 keywords = ["cli", "packages", "cleanup", "homebrew", "cargo"]
 categories = ["command-line-utilities", "development-tools"]
@@ -16,7 +16,6 @@ clap = { version = "4.5.57", features = ["derive"] }
 console = "0.16.2"
 dialoguer = "0.12.0"
 dirs = "6.0.0"
-indicatif = "0.18.3"
 rusqlite = { version = "0.38.0", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"

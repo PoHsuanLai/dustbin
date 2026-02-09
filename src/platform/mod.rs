@@ -37,3 +37,35 @@ pub trait DaemonManager {
     /// Get platform-specific setup instructions
     fn setup_instructions() -> &'static str;
 }
+
+/// A dynamic library dependency of a binary
+#[derive(Debug, Clone)]
+pub struct DylibDep {
+    pub path: String,
+}
+
+/// Result of analyzing a binary's dynamic library dependencies
+#[derive(Debug)]
+pub struct DylibAnalysis {
+    pub libs: Vec<DylibDep>,
+}
+
+/// A library file resolved to its owning package
+#[derive(Debug, Clone)]
+pub struct LibPackageInfo {
+    pub lib_path: String,
+    pub manager: String,
+    pub package_name: String,
+}
+
+/// Trait for platform-specific dynamic library analysis
+pub trait DylibAnalyzer {
+    /// Analyze a binary's dynamic library dependencies
+    fn analyze_binary(binary_path: &str) -> Result<DylibAnalysis>;
+
+    /// Resolve library paths to their owning packages (batch)
+    fn resolve_lib_packages(lib_paths: &[String]) -> Result<Vec<LibPackageInfo>>;
+
+    /// Get installed size of a package in bytes
+    fn get_package_size(manager: &str, package_name: &str) -> Result<Option<u64>>;
+}

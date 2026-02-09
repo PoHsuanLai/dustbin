@@ -1,6 +1,6 @@
 //! macOS-specific implementation using eslogger and launchd
 
-use super::{DaemonManager, ProcessMonitor};
+use super::{DaemonManager, DylibAnalysis, DylibAnalyzer, DylibDep, LibPackageInfo, ProcessMonitor};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
@@ -105,12 +105,12 @@ impl Drop for Monitor {
 pub struct Daemon;
 
 impl Daemon {
-    const LABEL: &'static str = "com.dustbin.daemon";
+    const LABEL: &'static str = "com.dusty.daemon";
 
     fn plist_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join("Library/LaunchAgents/com.dustbin.daemon.plist")
+            .join("Library/LaunchAgents/com.dusty.daemon.plist")
     }
 
     fn generate_plist(exe_path: &str) -> String {
@@ -131,9 +131,9 @@ impl Daemon {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/dustbin.log</string>
+    <string>/tmp/dusty.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/dustbin.err</string>
+    <string>/tmp/dusty.err</string>
 </dict>
 </plist>
 "#,
@@ -206,4 +206,107 @@ impl DaemonManager for Daemon {
          Go to System Settings → Privacy & Security → Full Disk Access\n\
          and add your terminal app (Terminal, iTerm, Warp, etc.)"
     }
+}
+
+/// macOS dynamic library analyzer using otool
+pub struct Analyzer;
+
+impl DylibAnalyzer for Analyzer {
+    fn analyze_binary(binary_path: &str) -> Result<DylibAnalysis> {
+        let output = Command::new("otool")
+            .args(["-L", binary_path])
+            .output();
+
+        let output = match output {
+            Ok(o) => o,
+            Err(_) => {
+                return Ok(DylibAnalysis {
+                    libs: vec![],
+                });
+            }
+        };
+
+        if !output.status.success() {
+            return Ok(DylibAnalysis {
+                libs: vec![],
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let libs = stdout
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                let path = trimmed.split(" (compatibility").next()?.trim();
+                if path.is_empty() {
+                    return None;
+                }
+                // Skip system libraries
+                if path.starts_with("/usr/lib/")
+                    || path.starts_with("/System/")
+                    || path.starts_with("/Library/Apple/")
+                {
+                    return None;
+                }
+                // Skip @rpath entries for v1
+                if path.starts_with('@') {
+                    return None;
+                }
+                Some(DylibDep {
+                    path: path.to_string(),
+                })
+            })
+            .collect();
+
+        Ok(DylibAnalysis { libs })
+    }
+
+    fn resolve_lib_packages(lib_paths: &[String]) -> Result<Vec<LibPackageInfo>> {
+        let mut results = Vec::new();
+        for lib_path in lib_paths {
+            if let Some(pkg) = extract_homebrew_package(lib_path) {
+                results.push(LibPackageInfo {
+                    lib_path: lib_path.clone(),
+                    manager: "homebrew".to_string(),
+                    package_name: pkg,
+                });
+            }
+        }
+        Ok(results)
+    }
+
+    fn get_package_size(_manager: &str, package_name: &str) -> Result<Option<u64>> {
+        // Try common Homebrew Cellar locations
+        for prefix in &["/opt/homebrew/Cellar", "/usr/local/Cellar"] {
+            let cellar_path = format!("{}/{}", prefix, package_name);
+            let output = Command::new("du").args(["-sk", &cellar_path]).output();
+            if let Ok(output) = output {
+                if output.status.success() {
+                    let line = String::from_utf8_lossy(&output.stdout);
+                    if let Some(size_str) = line.split_whitespace().next() {
+                        if let Ok(kb) = size_str.parse::<u64>() {
+                            return Ok(Some(kb * 1024));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+}
+
+/// Extract Homebrew package name from a library path
+fn extract_homebrew_package(path: &str) -> Option<String> {
+    for prefix in &[
+        "/opt/homebrew/opt/",
+        "/opt/homebrew/Cellar/",
+        "/usr/local/opt/",
+        "/usr/local/Cellar/",
+    ] {
+        if let Some(rest) = path.strip_prefix(prefix) {
+            return rest.split('/').next().map(|s| s.to_string());
+        }
+    }
+    None
 }

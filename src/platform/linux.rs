@@ -4,7 +4,7 @@
 mod linux_distro;
 pub use linux_distro::{InitSystem, LinuxInfo, PackageManager};
 
-use super::{DaemonManager, ProcessMonitor};
+use super::{DaemonManager, DylibAnalysis, DylibAnalyzer, DylibDep, LibPackageInfo, ProcessMonitor};
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::BufRead;
@@ -101,18 +101,18 @@ fn is_binary_path(path: &str) -> bool {
 pub struct Daemon;
 
 impl Daemon {
-    const SERVICE_NAME: &'static str = "dustbin";
+    const SERVICE_NAME: &'static str = "dusty";
 
     fn systemd_service_path() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("systemd/user/dustbin.service")
+            .join("systemd/user/dusty.service")
     }
 
     fn generate_systemd_service(exe_path: &str) -> String {
         format!(
             r#"[Unit]
-Description=Dustbin - Track binary usage
+Description=Dusty - Track binary usage
 After=default.target
 
 [Service]
@@ -129,15 +129,15 @@ WantedBy=default.target
     }
 
     fn openrc_service_path() -> PathBuf {
-        PathBuf::from("/etc/init.d/dustbin")
+        PathBuf::from("/etc/init.d/dusty")
     }
 
     fn generate_openrc_service(exe_path: &str) -> String {
         format!(
             r#"#!/sbin/openrc-run
 
-name="dustbin"
-description="Dustbin - Track binary usage"
+name="dusty"
+description="Dusty - Track binary usage"
 command="{}"
 command_args="daemon"
 command_background=true
@@ -155,7 +155,7 @@ depend() {{
     fn runit_service_dir() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("~"))
-            .join(".local/sv/dustbin")
+            .join(".local/sv/dusty")
     }
 
     fn generate_runit_run(exe_path: &str) -> String {
@@ -278,7 +278,7 @@ impl DaemonManager for Daemon {
                 // OpenRC requires root to install services
                 fs::write(&service_path, &service_content).or_else(|_| {
                     // Try with sudo
-                    let tmp = "/tmp/dustbin-openrc";
+                    let tmp = "/tmp/dusty-openrc";
                     fs::write(tmp, &service_content)?;
                     Command::new("sudo")
                         .args(["mv", tmp, service_path.to_str().unwrap()])
@@ -414,4 +414,254 @@ impl DaemonManager for Daemon {
             _ => "fatrace requires root privileges.\nInstall using your system's package manager.",
         }
     }
+}
+
+/// Linux dynamic library analyzer using ldd
+pub struct Analyzer;
+
+/// Core glibc libraries to skip (always present, not interesting for dependency analysis)
+const SKIP_LIB_PREFIXES: &[&str] = &[
+    "linux-vdso.so",
+    "linux-gate.so",
+    "ld-linux",
+    "libpthread.so",
+    "libdl.so",
+    "librt.so",
+    "libm.so",
+    "libc.so",
+];
+
+impl DylibAnalyzer for Analyzer {
+    fn analyze_binary(binary_path: &str) -> Result<DylibAnalysis> {
+        let output = Command::new("ldd").arg(binary_path).output();
+
+        let output = match output {
+            Ok(o) => o,
+            Err(_) => {
+                return Ok(DylibAnalysis {
+
+                    libs: vec![],
+                });
+            }
+        };
+
+        if !output.status.success() {
+            // "not a dynamic executable" or similar
+            return Ok(DylibAnalysis {
+                binary_path: binary_path.to_string(),
+                libs: vec![],
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let libs = stdout
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                // Lines with => contain resolved paths: "libfoo.so => /usr/lib/libfoo.so (0x...)"
+                if let Some(arrow_pos) = trimmed.find("=>") {
+                    let after_arrow = trimmed[arrow_pos + 2..].trim();
+                    let path = after_arrow.split(" (").next()?.trim();
+                    if path.is_empty() || path == "not found" {
+                        return None;
+                    }
+                    let lib_name = trimmed.split("=>").next()?.trim();
+                    if SKIP_LIB_PREFIXES.iter().any(|p| lib_name.starts_with(p)) {
+                        return None;
+                    }
+                    Some(DylibDep {
+                        path: path.to_string(),
+                    })
+                } else {
+                    // Lines without => are either the loader or vdso, skip
+                    None
+                }
+            })
+            .collect();
+
+        Ok(DylibAnalysis { libs })
+    }
+
+    fn resolve_lib_packages(lib_paths: &[String]) -> Result<Vec<LibPackageInfo>> {
+        let info = LinuxInfo::detect();
+        match info.package_manager {
+            PackageManager::Apt => resolve_via_dpkg(lib_paths),
+            PackageManager::Dnf | PackageManager::Yum | PackageManager::Zypper => {
+                resolve_via_rpm(lib_paths)
+            }
+            PackageManager::Pacman => resolve_via_pacman(lib_paths),
+            _ => Ok(vec![]),
+        }
+    }
+
+    fn get_package_size(_manager: &str, package_name: &str) -> Result<Option<u64>> {
+        let info = LinuxInfo::detect();
+        match info.package_manager {
+            PackageManager::Apt => {
+                // dpkg-query returns size in KB
+                let output = Command::new("dpkg-query")
+                    .args(["-W", "-f=${Installed-Size}", package_name])
+                    .output();
+                if let Ok(output) = output {
+                    if output.status.success() {
+                        let size_str = String::from_utf8_lossy(&output.stdout);
+                        if let Ok(kb) = size_str.trim().parse::<u64>() {
+                            return Ok(Some(kb * 1024));
+                        }
+                    }
+                }
+            }
+            PackageManager::Pacman => {
+                let output = Command::new("pacman")
+                    .args(["-Qi", package_name])
+                    .output();
+                if let Ok(output) = output {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        if let Some(size) = parse_pacman_size(&stdout) {
+                            return Ok(Some(size));
+                        }
+                    }
+                }
+            }
+            PackageManager::Dnf | PackageManager::Yum | PackageManager::Zypper => {
+                let output = Command::new("rpm")
+                    .args(["-qi", package_name])
+                    .output();
+                if let Ok(output) = output {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        if let Some(size) = parse_rpm_size(&stdout) {
+                            return Ok(Some(size));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(None)
+    }
+}
+
+/// Resolve library paths via dpkg -S (Debian/Ubuntu)
+fn resolve_via_dpkg(lib_paths: &[String]) -> Result<Vec<LibPackageInfo>> {
+    let mut results = Vec::new();
+    for chunk in lib_paths.chunks(50) {
+        let args: Vec<&str> = std::iter::once("-S")
+            .chain(chunk.iter().map(|s| s.as_str()))
+            .collect();
+        let output = Command::new("dpkg").args(&args).output();
+        if let Ok(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Output: "package:arch: /path/to/file"
+            for line in stdout.lines() {
+                if let Some((pkg_part, path_part)) = line.split_once(": ") {
+                    let package_name = pkg_part.split(':').next().unwrap_or(pkg_part).trim();
+                    let lib_path = path_part.trim();
+                    results.push(LibPackageInfo {
+                        lib_path: lib_path.to_string(),
+                        manager: "apt".to_string(),
+                        package_name: package_name.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
+/// Resolve library paths via rpm -qf (Fedora/RHEL/SUSE)
+fn resolve_via_rpm(lib_paths: &[String]) -> Result<Vec<LibPackageInfo>> {
+    let mut results = Vec::new();
+    for chunk in lib_paths.chunks(50) {
+        let mut args = vec!["-qf", "--queryformat", "%{NAME}\\n"];
+        for path in chunk {
+            args.push(path.as_str());
+        }
+        let output = Command::new("rpm").args(&args).output();
+        if let Ok(output) = output {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for (pkg_name, lib_path) in stdout.lines().zip(chunk.iter()) {
+                    let pkg_name = pkg_name.trim();
+                    if !pkg_name.is_empty() && !pkg_name.starts_with("file ") {
+                        results.push(LibPackageInfo {
+                            lib_path: lib_path.clone(),
+                            manager: "rpm".to_string(),
+                            package_name: pkg_name.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
+/// Resolve library paths via pacman -Qo (Arch)
+fn resolve_via_pacman(lib_paths: &[String]) -> Result<Vec<LibPackageInfo>> {
+    let mut results = Vec::new();
+    for lib_path in lib_paths {
+        let output = Command::new("pacman")
+            .args(["-Qo", lib_path.as_str()])
+            .output();
+        if let Ok(output) = output {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // Output: "/usr/lib/libfoo.so is owned by package-name 1.2.3-4"
+                if let Some(pkg) = stdout
+                    .split("is owned by ")
+                    .nth(1)
+                    .and_then(|s| s.split_whitespace().next())
+                {
+                    results.push(LibPackageInfo {
+                        lib_path: lib_path.clone(),
+                        manager: "pacman".to_string(),
+                        package_name: pkg.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
+/// Parse "Installed Size" from pacman -Qi output
+fn parse_pacman_size(output: &str) -> Option<u64> {
+    for line in output.lines() {
+        if line.starts_with("Installed Size") {
+            let value = line.split(':').nth(1)?.trim();
+            return parse_human_size(value);
+        }
+    }
+    None
+}
+
+/// Parse "Size" from rpm -qi output
+fn parse_rpm_size(output: &str) -> Option<u64> {
+    for line in output.lines() {
+        if line.starts_with("Size") {
+            let value = line.split(':').nth(1)?.trim();
+            // rpm reports size in bytes directly
+            return value.parse::<u64>().ok();
+        }
+    }
+    None
+}
+
+/// Parse human-readable size strings like "1.2 MiB", "340 KiB"
+fn parse_human_size(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let num: f64 = parts[0].parse().ok()?;
+    let multiplier = match parts[1] {
+        "B" => 1.0,
+        "KiB" | "KB" => 1024.0,
+        "MiB" | "MB" => 1024.0 * 1024.0,
+        "GiB" | "GB" => 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((num * multiplier) as u64)
 }
