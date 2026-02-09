@@ -149,9 +149,6 @@ fn sync_binaries(db: &Database) -> Result<()> {
         }
     }
 
-    // Migrate any historical exec counts from resolved paths to canonical paths
-    db.migrate_alias_counts()?;
-
     // Remove binaries that no longer exist on disk
     db.prune_missing()?;
 
@@ -1663,7 +1660,7 @@ fn print_dupe_expanded(name: &str, copies: &[storage::BinaryRecord]) {
 }
 
 fn cmd_deps(
-    _orphans_only: bool,
+    orphans_only: bool,
     binary: Option<String>,
     refresh: bool,
     json: bool,
@@ -1752,16 +1749,18 @@ fn cmd_deps(
 
     println!();
 
-    println!(
-        "  {} {} binaries analyzed",
-        style("◦").dim(),
-        report.binaries_analyzed
-    );
-    println!(
-        "  {} {} library packages found",
-        style("◦").dim(),
-        report.total_lib_packages
-    );
+    if !orphans_only {
+        println!(
+            "  {} {} binaries analyzed",
+            style("◦").dim(),
+            report.binaries_analyzed
+        );
+        println!(
+            "  {} {} library packages found",
+            style("◦").dim(),
+            report.total_lib_packages
+        );
+    }
 
     if report.orphan_packages.is_empty() {
         println!();

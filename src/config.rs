@@ -15,14 +15,14 @@ pub struct SourceDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
+pub struct ScanConfig {
     /// Use $PATH to discover binaries (default: true)
     #[serde(default = "default_true")]
-    pub scan_path: bool,
+    pub path: bool,
 
     /// Additional directories to scan (beyond PATH)
     #[serde(default)]
-    pub extra_scan_dirs: Vec<String>,
+    pub extra_dirs: Vec<String>,
 
     /// Directories to skip (even if in PATH)
     #[serde(default = "default_skip_dirs")]
@@ -32,13 +32,20 @@ pub struct Config {
     #[serde(default = "default_skip_prefixes")]
     pub skip_prefixes: Vec<String>,
 
-    /// Source definitions for categorizing binaries
-    #[serde(default = "default_sources")]
-    pub sources: Vec<SourceDef>,
-
     /// Binaries to ignore in reports (patterns, e.g. "python*-config")
     #[serde(default)]
     pub ignore_binaries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    /// Scanning configuration
+    #[serde(default)]
+    pub scan: ScanConfig,
+
+    /// Source definitions for categorizing binaries
+    #[serde(default = "default_sources")]
+    pub sources: Vec<SourceDef>,
 }
 
 fn default_true() -> bool {
@@ -82,20 +89,26 @@ fn default_skip_prefixes() -> Vec<String> {
 }
 
 fn default_sources() -> Vec<SourceDef> {
-    // Empty by default - config file will have the actual defaults
-    // This is just for serde deserialization when sources key is missing
     vec![]
+}
+
+impl Default for ScanConfig {
+    fn default() -> Self {
+        Self {
+            path: true,
+            extra_dirs: vec![],
+            skip_dirs: default_skip_dirs(),
+            skip_prefixes: default_skip_prefixes(),
+            ignore_binaries: vec![],
+        }
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            scan_path: true,
-            extra_scan_dirs: vec![],
-            skip_dirs: default_skip_dirs(),
-            skip_prefixes: default_skip_prefixes(),
+            scan: ScanConfig::default(),
             sources: Self::default_sources_list(),
-            ignore_binaries: vec![],
         }
     }
 }
@@ -114,7 +127,6 @@ impl Config {
             for detect_path in candidate.detect_paths {
                 let expanded = detect_path.replace('~', home_str);
                 if std::path::Path::new(&expanded).exists() {
-                    // Simplify back to ~ for config display
                     let pattern = expanded.replace(home_str, "~");
                     sources.push(SourceDef {
                         name: candidate.name.to_string(),
@@ -126,7 +138,6 @@ impl Config {
             }
         }
 
-        // Extra path patterns that don't need existence checks
         for &(name, pattern, requires) in EXTRA_PATH_PATTERNS {
             if sources.iter().any(|s| s.name == requires) {
                 sources.push(SourceDef {
@@ -167,7 +178,6 @@ impl Config {
             let config: Config = toml::from_str(&content)?;
             Ok(config)
         } else {
-            // Create default config file on first run
             let config = Config::default();
             config.save()?;
             Ok(config)
@@ -198,8 +208,7 @@ impl Config {
     pub fn get_scan_dirs(&self) -> Vec<String> {
         let mut dirs = Vec::new();
 
-        // Add PATH directories if enabled
-        if self.scan_path
+        if self.scan.path
             && let Ok(path_var) = std::env::var("PATH")
         {
             for dir in path_var.split(':') {
@@ -209,8 +218,7 @@ impl Config {
             }
         }
 
-        // Add extra directories
-        for dir in &self.extra_scan_dirs {
+        for dir in &self.scan.extra_dirs {
             if !self.should_skip_dir(dir) {
                 dirs.push(dir.clone());
             }
@@ -221,14 +229,13 @@ impl Config {
 
     /// Check if a directory should be skipped
     pub fn should_skip_dir(&self, dir: &str) -> bool {
-        self.skip_dirs.iter().any(|skip| dir.starts_with(skip))
+        self.scan.skip_dirs.iter().any(|skip| dir.starts_with(skip))
     }
 
     /// Check if a binary should be ignored in reports
     pub fn should_ignore_binary(&self, binary_name: &str) -> bool {
-        for pattern in &self.ignore_binaries {
+        for pattern in &self.scan.ignore_binaries {
             if pattern.contains('*') {
-                // Simple glob matching
                 let parts: Vec<&str> = pattern.split('*').collect();
                 if parts.len() == 2 {
                     let (prefix, suffix) = (parts[0], parts[1]);
@@ -251,7 +258,7 @@ mod tests {
     #[test]
     fn test_should_ignore_binary_exact() {
         let mut config = Config::default();
-        config.ignore_binaries = vec!["python3-config".to_string()];
+        config.scan.ignore_binaries = vec!["python3-config".to_string()];
 
         assert!(config.should_ignore_binary("python3-config"));
         assert!(!config.should_ignore_binary("python3"));
@@ -261,7 +268,7 @@ mod tests {
     #[test]
     fn test_should_ignore_binary_glob() {
         let mut config = Config::default();
-        config.ignore_binaries = vec!["python*-config".to_string()];
+        config.scan.ignore_binaries = vec!["python*-config".to_string()];
 
         assert!(config.should_ignore_binary("python3-config"));
         assert!(config.should_ignore_binary("python-config"));

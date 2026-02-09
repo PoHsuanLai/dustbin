@@ -97,22 +97,22 @@ Config file location:
 - Linux: `~/.config/dusty/config.toml`
 
 ```toml
-scan_path = true
-extra_scan_dirs = []
+[scan]
+path = true
+extra_dirs = []
 skip_dirs = ["/usr/bin", "/bin"]
 skip_prefixes = ["/usr/libexec/"]
-
-# Ignore these binaries in reports
 ignore_binaries = ["python*-config"]
 
-# Source detection patterns
 [[sources]]
 name = "homebrew"
 path = "/opt/homebrew"
+uninstall_cmd = "brew uninstall"
 
 [[sources]]
 name = "cargo"
 path = ".cargo/bin"
+uninstall_cmd = "cargo uninstall"
 ```
 
 ## How It Works

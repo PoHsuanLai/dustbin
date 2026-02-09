@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use anyhow::Result;
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
@@ -13,7 +11,6 @@ pub struct Database {
 pub struct BinaryRecord {
     pub path: String,
     pub count: i64,
-    pub first_seen: Option<i64>,
     pub last_seen: Option<i64>,
     pub source: Option<String>,
     pub package_name: Option<String>,
@@ -81,64 +78,7 @@ impl Database {
             ",
         )?;
 
-        // Migrate: merge packages table into binaries, then drop packages
-        self.migrate_packages_to_binaries()?;
-
         Ok(())
-    }
-
-    fn migrate_packages_to_binaries(&self) -> Result<()> {
-        // Check if the old packages table exists
-        let has_packages: bool = self
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='packages'",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|c| c > 0)
-            .unwrap_or(false);
-
-        if has_packages {
-            // Ensure binaries has the new columns (they may not exist on old schema)
-            let has_source = self.has_column("binaries", "source")?;
-            if !has_source {
-                self.conn
-                    .execute_batch("ALTER TABLE binaries ADD COLUMN source TEXT")?;
-            }
-            let has_pkg = self.has_column("binaries", "package_name")?;
-            if !has_pkg {
-                self.conn
-                    .execute_batch("ALTER TABLE binaries ADD COLUMN package_name TEXT")?;
-            }
-
-            // Copy data from packages into binaries
-            self.conn.execute_batch(
-                "UPDATE binaries SET
-                    source = (SELECT manager FROM packages WHERE binary_path = binaries.path),
-                    package_name = (SELECT name FROM packages WHERE binary_path = binaries.path)
-                 WHERE path IN (SELECT binary_path FROM packages);
-
-                 DROP TABLE packages;
-                 DROP INDEX IF EXISTS idx_packages_binary;",
-            )?;
-        }
-
-        Ok(())
-    }
-
-    fn has_column(&self, table: &str, column: &str) -> Result<bool> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("PRAGMA table_info({})", table))?;
-        let found = stmt
-            .query_map([], |row| {
-                let name: String = row.get(1)?;
-                Ok(name)
-            })?
-            .filter_map(|r| r.ok())
-            .any(|name| name == column);
-        Ok(found)
     }
 
     pub fn record_exec(&self, path: &str, source: Option<&str>) -> Result<()> {
@@ -184,7 +124,7 @@ impl Database {
 
     pub fn get_all_binaries(&self) -> Result<Vec<BinaryRecord>> {
         let mut stmt = self.conn.prepare(
-            "SELECT path, count, first_seen, last_seen, source, package_name
+            "SELECT path, count, last_seen, source, package_name
              FROM binaries
              ORDER BY count DESC",
         )?;
@@ -193,10 +133,9 @@ impl Database {
             Ok(BinaryRecord {
                 path: row.get(0)?,
                 count: row.get(1)?,
-                first_seen: row.get(2)?,
-                last_seen: row.get(3)?,
-                source: row.get(4)?,
-                package_name: row.get(5)?,
+                last_seen: row.get(2)?,
+                source: row.get(3)?,
+                package_name: row.get(4)?,
             })
         })?;
 
@@ -373,15 +312,6 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    /// Get dependencies for a single binary
-    pub fn get_deps_for_binary(&self, binary_path: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT lib_path FROM dylib_deps WHERE binary_path = ?1",
-        )?;
-        let rows = stmt.query_map(params![binary_path], |row| row.get(0))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-    }
-
     /// Clear all dependency analysis cache (for --refresh)
     pub fn clear_all_deps(&self) -> Result<()> {
         self.conn.execute_batch(
@@ -426,77 +356,4 @@ impl Database {
         rows.collect::<Result<std::collections::HashSet<_>, _>>().map_err(Into::into)
     }
 
-    /// Migrate exec counts from alias (resolved) paths to their canonical paths.
-    /// This fixes historical data where eslogger recorded Cellar paths instead
-    /// of the symlink paths that binaries were registered under.
-    pub fn migrate_alias_counts(&self) -> Result<u64> {
-        let tx = self.conn.unchecked_transaction()?;
-        let mut migrated = 0u64;
-
-        // Find binaries entries that match an alias_path and have counts > 0
-        let rows: Vec<(String, i64, Option<i64>, Option<i64>, String)> = {
-            let mut stmt = tx.prepare(
-                "SELECT b.path, b.count, b.first_seen, b.last_seen, a.canonical_path
-                 FROM binaries b
-                 INNER JOIN path_aliases a ON b.path = a.alias_path
-                 WHERE b.count > 0",
-            )?;
-
-            stmt.query_map([], |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
-        };
-
-        for (alias_path, count, first_seen, last_seen, canonical_path) in &rows {
-            // Add counts to the canonical path
-            tx.execute(
-                "UPDATE binaries SET
-                    count = count + ?2,
-                    first_seen = CASE
-                        WHEN first_seen IS NULL THEN ?3
-                        WHEN ?3 IS NULL THEN first_seen
-                        WHEN ?3 < first_seen THEN ?3
-                        ELSE first_seen
-                    END,
-                    last_seen = CASE
-                        WHEN last_seen IS NULL THEN ?4
-                        WHEN ?4 IS NULL THEN last_seen
-                        WHEN ?4 > last_seen THEN ?4
-                        ELSE last_seen
-                    END
-                 WHERE path = ?1",
-                params![canonical_path, count, first_seen, last_seen],
-            )?;
-
-            // Delete the alias entry from binaries — it was a phantom entry
-            // created by record_exec before alias resolution existed
-            tx.execute(
-                "DELETE FROM binaries WHERE path = ?1",
-                params![alias_path],
-            )?;
-
-            migrated += 1;
-        }
-
-        // Also clean up any remaining alias-path entries with count = 0
-        // that were created by past exec events
-        tx.execute(
-            "DELETE FROM binaries WHERE path IN (
-                SELECT b.path FROM binaries b
-                INNER JOIN path_aliases a ON b.path = a.alias_path
-                WHERE b.count = 0
-            )",
-            [],
-        )?;
-
-        tx.commit()?;
-        Ok(migrated)
-    }
 }
