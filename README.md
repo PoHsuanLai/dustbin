@@ -51,6 +51,8 @@ dusty clean
 | `dusty stats` | Show summary statistics with visual charts |
 | `dusty report` | Show detailed usage report |
 | `dusty clean` | Interactively remove unused packages |
+| `dusty dupes` | Find duplicate binaries across sources |
+| `dusty deps` | Analyze dynamic library dependencies |
 | `dusty config` | Show or edit configuration |
 | `dusty start` | Manually start the tracking daemon |
 | `dusty stop` | Stop the tracking daemon |
@@ -58,7 +60,7 @@ dusty clean
 ### Report Options
 
 ```bash
-dusty report              # Top 20 binaries by usage
+dusty report              # Binaries by usage (fits terminal)
 dusty report --dust       # Only unused binaries (count = 0)
 dusty report --low 5      # Binaries with < 5 uses
 dusty report --stale 30   # Not used in 30 days

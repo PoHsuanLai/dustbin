@@ -111,11 +111,16 @@ impl Daemon {
 
     fn plist_path() -> PathBuf {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .expect("Could not determine home directory")
             .join("Library/LaunchAgents/com.dusty.daemon.plist")
     }
 
     fn generate_plist(exe_path: &str) -> String {
+        let log_dir = dirs::home_dir()
+            .expect("Could not determine home directory")
+            .join("Library/Logs/dusty");
+        let log_path = log_dir.join("dusty.log");
+        let err_path = log_dir.join("dusty.err");
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -133,14 +138,16 @@ impl Daemon {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/dusty.log</string>
+    <string>{}</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/dusty.err</string>
+    <string>{}</string>
 </dict>
 </plist>
 "#,
             Self::LABEL,
-            exe_path
+            exe_path,
+            log_path.to_string_lossy(),
+            err_path.to_string_lossy(),
         )
     }
 }
@@ -169,10 +176,14 @@ impl DaemonManager for Daemon {
         if let Some(parent) = plist_path.parent() {
             fs::create_dir_all(parent)?;
         }
+        let log_dir = dirs::home_dir()
+            .expect("Could not determine home directory")
+            .join("Library/Logs/dusty");
+        fs::create_dir_all(&log_dir)?;
         fs::write(&plist_path, plist_content)?;
 
         let status = Command::new("launchctl")
-            .args(["load", "-w", plist_path.to_str().unwrap()])
+            .args(["load", "-w", &*plist_path.to_string_lossy()])
             .status()
             .context("Failed to load launchd job")?;
 
@@ -191,7 +202,7 @@ impl DaemonManager for Daemon {
         }
 
         let status = Command::new("launchctl")
-            .args(["unload", plist_path.to_str().unwrap()])
+            .args(["unload", &*plist_path.to_string_lossy()])
             .status()
             .context("Failed to unload launchd job")?;
 

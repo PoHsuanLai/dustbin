@@ -156,7 +156,7 @@ depend() {{
 
     fn runit_service_dir() -> PathBuf {
         dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("~"))
+            .expect("Could not determine home directory")
             .join(".local/sv/dusty")
     }
 
@@ -280,13 +280,13 @@ impl DaemonManager for Daemon {
                 // OpenRC requires root to install services
                 fs::write(&service_path, &service_content).or_else(|_| {
                     // Try with sudo
-                    let tmp = "/tmp/dusty-openrc";
-                    fs::write(tmp, &service_content)?;
+                        let tmp = std::env::temp_dir().join("dusty-openrc");
+                    fs::write(&tmp, &service_content)?;
                     Command::new("sudo")
-                        .args(["mv", tmp, service_path.to_str().unwrap()])
+                        .args(["mv", &*tmp.to_string_lossy(), &*service_path.to_string_lossy()])
                         .status()?;
                     Command::new("sudo")
-                        .args(["chmod", "+x", service_path.to_str().unwrap()])
+                        .args(["chmod", "+x", &*service_path.to_string_lossy()])
                         .status()?;
                     Ok::<(), anyhow::Error>(())
                 })?;
@@ -315,12 +315,12 @@ impl DaemonManager for Daemon {
 
                 // Make executable
                 Command::new("chmod")
-                    .args(["+x", run_script.to_str().unwrap()])
+                    .args(["+x", &*run_script.to_string_lossy()])
                     .status()?;
 
                 // Link to user services (varies by distro)
                 let user_sv = dirs::home_dir()
-                    .unwrap_or_else(|| PathBuf::from("~"))
+                    .expect("Could not determine home directory")
                     .join(".local/service");
                 fs::create_dir_all(&user_sv)?;
 
@@ -370,13 +370,13 @@ impl DaemonManager for Daemon {
                     .status()
                     .ok();
                 Command::new("sudo")
-                    .args(["rm", "-f", Self::openrc_service_path().to_str().unwrap()])
+                    .args(["rm", "-f", &*Self::openrc_service_path().to_string_lossy()])
                     .status()
                     .ok();
             }
             InitSystem::Runit => {
                 let user_sv = dirs::home_dir()
-                    .unwrap_or_else(|| PathBuf::from("~"))
+                    .expect("Could not determine home directory")
                     .join(".local/service")
                     .join(Self::SERVICE_NAME);
 
@@ -446,10 +446,7 @@ impl DylibAnalyzer for Analyzer {
 
         if !output.status.success() {
             // "not a dynamic executable" or similar
-            return Ok(DylibAnalysis {
-                binary_path: binary_path.to_string(),
-                libs: vec![],
-            });
+            return Ok(DylibAnalysis { libs: vec![] });
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);

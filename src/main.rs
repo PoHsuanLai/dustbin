@@ -18,6 +18,14 @@ use package::scan_all_binaries;
 use platform::{Daemon, DaemonManager, Monitor, ProcessMonitor};
 use storage::Database;
 
+/// Convert a Unix timestamp to a local DateTime, handling invalid values gracefully.
+fn local_datetime(ts: i64) -> DateTime<Local> {
+    Local
+        .timestamp_opt(ts, 0)
+        .single()
+        .unwrap_or_else(|| Local.timestamp_opt(0, 0).single().unwrap())
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -185,12 +193,11 @@ fn cmd_status(json: bool) -> Result<()> {
     // Auto-start daemon if not running
     let just_started = start_daemon(true)?;
     let running = Daemon::is_daemon_running();
-    let _binaries = db.get_all_binaries()?;
     let dusty_count = db.get_dusty_count()?;
     let binary_count = db.get_binary_count()?;
 
     let (tracking_since, days) = if let Some(since) = db.get_tracking_since()? {
-        let dt: DateTime<Local> = Local.timestamp_opt(since, 0).unwrap();
+        let dt: DateTime<Local> = local_datetime(since);
         let now = Local::now();
         let duration = now.signed_duration_since(dt);
         (Some(dt.format("%Y-%m-%d").to_string()), duration.num_days())
@@ -373,7 +380,7 @@ fn cmd_report(
         .iter()
         .map(|b| {
             let last_used = b.last_seen.map(|ts| {
-                let dt: DateTime<Local> = Local.timestamp_opt(ts, 0).unwrap();
+                let dt: DateTime<Local> = local_datetime(ts);
                 dt.format("%Y-%m-%d %H:%M").to_string()
             });
 
@@ -1470,7 +1477,7 @@ fn cmd_dupes(name: Option<String>, expand: bool, json: bool) -> Result<()> {
                         source: c.source.clone(),
                         count: c.count,
                         last_used: c.last_seen.map(|ts| {
-                            let dt: DateTime<Local> = Local.timestamp_opt(ts, 0).unwrap();
+                            let dt: DateTime<Local> = local_datetime(ts);
                             dt.format("%Y-%m-%d %H:%M").to_string()
                         }),
                     })
@@ -1674,7 +1681,7 @@ fn write_dupe_expanded(
         let last_used = c
             .last_seen
             .map(|ts| {
-                let dt: DateTime<Local> = Local.timestamp_opt(ts, 0).unwrap();
+                let dt: DateTime<Local> = local_datetime(ts);
                 dt.format("%Y-%m-%d").to_string()
             })
             .unwrap_or_else(|| "never".to_string());
@@ -2024,7 +2031,12 @@ fn truncate_str(s: &str, max_len: usize) -> String {
 }
 
 fn should_skip_path(path: &str) -> bool {
-    let skip_prefixes = ["/usr/libexec/", "/System/", "/Library/Apple/", "/usr/sbin/"];
+    #[cfg(target_os = "macos")]
+    let skip_prefixes: &[&str] = &["/usr/libexec/", "/System/", "/Library/Apple/", "/usr/sbin/"];
+    #[cfg(target_os = "linux")]
+    let skip_prefixes: &[&str] = &["/usr/libexec/", "/usr/sbin/", "/usr/lib/", "/usr/share/"];
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let skip_prefixes: &[&str] = &["/usr/libexec/", "/usr/sbin/"];
 
     let skip_exact = ["/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/env"];
 
