@@ -6,16 +6,6 @@
 
 Track which installed packages you actually use. Find the rest, and clean them up.
 
-```
-❯ dusty stats
-
-  2478 binaries tracked across 4 sources
-
-  ■    89  active (5+ uses)
-  ■   113  low (1-4 uses)
-  ■  2276  dusty (never used)
-```
-
 ![demo](assets/demo.gif)
 
 ## Install
