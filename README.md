@@ -37,13 +37,13 @@ This starts the background daemon and tells you if anything else is needed.
 > System Settings > Privacy & Security > Full Disk Access > add `/usr/bin/eslogger`
 > (press Cmd+Shift+G in the file picker to type the path)
 
-Then: `sudo dusty start`
+Then: `dusty start` (will prompt for sudo)
 
-**Linux** — Install `fatrace` and run as root:
+**Linux** — Install `fatrace`:
 
 ```bash
 sudo apt install fatrace   # or dnf, pacman, etc.
-sudo dusty start
+dusty start                # will prompt for sudo
 ```
 
 ## Usage

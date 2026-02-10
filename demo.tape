@@ -27,6 +27,10 @@ Type "dusty why netpbm"
 Enter
 Sleep 3s
 
+Type "dusty deps"
+Enter
+Sleep 4s
+
 Type "dusty size --dust"
 Enter
 Sleep 3s

@@ -480,12 +480,12 @@ impl DaemonManager for Daemon {
     }
 
     fn log_hint() -> String {
-        "journalctl -u dusty".to_string()
+        "sudo journalctl -u dusty".to_string()
     }
 
     fn view_logs(lines: usize, follow: bool) -> Result<()> {
-        let mut cmd = Command::new("journalctl");
-        cmd.args(["-u", "dusty", "-n", &lines.to_string()]);
+        let mut cmd = Command::new("sudo");
+        cmd.args(["journalctl", "-u", "dusty", "-n", &lines.to_string()]);
         if follow {
             cmd.arg("-f");
         }
