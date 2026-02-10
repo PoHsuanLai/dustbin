@@ -169,3 +169,52 @@ pub fn get_package_name(bin_path: &Path, default_name: &str) -> String {
 
     default_name.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_cellar_package() {
+        assert_eq!(
+            extract_cellar_package("/opt/homebrew/Cellar/python@3.13/3.13.11_1/libexec/bin/pip"),
+            Some("python@3.13".to_string())
+        );
+        assert_eq!(
+            extract_cellar_package("/opt/homebrew/Cellar/git/2.44.0/bin/git"),
+            Some("git".to_string())
+        );
+        assert_eq!(extract_cellar_package("/opt/homebrew/bin/git"), None);
+        assert_eq!(extract_cellar_package("/usr/bin/ls"), None);
+        assert_eq!(extract_cellar_package("Cellar/"), None);
+        assert_eq!(extract_cellar_package(""), None);
+    }
+
+    #[test]
+    fn test_get_package_name_cellar_path() {
+        // Non-symlink Cellar path (daemon-recorded)
+        let path = Path::new("/opt/homebrew/Cellar/python@3.13/3.13.11_1/libexec/bin/pip");
+        assert_eq!(get_package_name(path, "pip"), "python@3.13");
+    }
+
+    #[test]
+    fn test_get_package_name_install_root() {
+        let path = Path::new("/opt/oss-cad-suite/bin/yosys");
+        assert_eq!(get_package_name(path, "yosys"), "oss-cad-suite");
+    }
+
+    #[test]
+    fn test_get_package_name_fallback() {
+        let path = Path::new("/some/random/path/mytool");
+        assert_eq!(get_package_name(path, "mytool"), "mytool");
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        assert_eq!(expand_tilde("/usr/bin"), PathBuf::from("/usr/bin"));
+        // ~ should expand to something (home dir)
+        let expanded = expand_tilde("~/test");
+        assert!(expanded.to_string_lossy().ends_with("/test"));
+        assert!(!expanded.to_string_lossy().starts_with("~"));
+    }
+}

@@ -416,3 +416,91 @@ fn export_uninstall_commands(rows: &[PackageJson]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::BinaryRecord;
+
+    fn make_binary(path: &str, count: i64, source: &str, pkg: &str) -> BinaryRecord {
+        BinaryRecord {
+            path: path.to_string(),
+            count,
+            first_seen: None,
+            last_seen: if count > 0 { Some(1000) } else { None },
+            source: Some(source.to_string()),
+            package_name: Some(pkg.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_aggregate_packages_groups_by_package() {
+        let binaries = vec![
+            make_binary("/opt/homebrew/bin/pnminvert", 0, "homebrew", "netpbm"),
+            make_binary("/opt/homebrew/bin/pnmtopng", 0, "homebrew", "netpbm"),
+            make_binary("/opt/homebrew/bin/git", 100, "homebrew", "git"),
+        ];
+
+        let packages = aggregate_packages(&binaries);
+
+        assert_eq!(packages.len(), 2);
+        // git should be first (more uses)
+        assert_eq!(packages[0].package_name, "git");
+        assert_eq!(packages[0].total_uses, 100);
+        assert_eq!(packages[0].binaries, 1);
+        // netpbm second
+        assert_eq!(packages[1].package_name, "netpbm");
+        assert_eq!(packages[1].total_uses, 0);
+        assert_eq!(packages[1].binaries, 2);
+    }
+
+    #[test]
+    fn test_aggregate_packages_empty() {
+        let packages = aggregate_packages(&[]);
+        assert!(packages.is_empty());
+    }
+
+    #[test]
+    fn test_aggregate_packages_last_seen() {
+        let binaries = vec![
+            BinaryRecord {
+                path: "/a".to_string(),
+                count: 5,
+                first_seen: None,
+                last_seen: Some(100),
+                source: Some("s".to_string()),
+                package_name: Some("pkg".to_string()),
+            },
+            BinaryRecord {
+                path: "/b".to_string(),
+                count: 3,
+                first_seen: None,
+                last_seen: Some(200),
+                source: Some("s".to_string()),
+                package_name: Some("pkg".to_string()),
+            },
+        ];
+
+        let packages = aggregate_packages(&binaries);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].total_uses, 8);
+        assert_eq!(packages[0].last_seen, Some(200)); // takes the max
+    }
+
+    #[test]
+    fn test_aggregate_packages_missing_fields() {
+        let binaries = vec![BinaryRecord {
+            path: "/usr/local/bin/mytool".to_string(),
+            count: 0,
+            first_seen: None,
+            last_seen: None,
+            source: None,
+            package_name: None,
+        }];
+
+        let packages = aggregate_packages(&binaries);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].package_name, "mytool"); // falls back to filename
+        assert_eq!(packages[0].source, "other");
+    }
+}

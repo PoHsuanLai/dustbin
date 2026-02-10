@@ -198,3 +198,36 @@ pub fn autoremove_hint(source: &str) -> Option<&'static str> {
 pub const DEFAULT_EDITOR: &str = "vim";
 pub const DEFAULT_PAGER: &str = "less";
 pub const PAGER_COLOR_FLAG: &str = "-R";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_install_cmd_from_uninstall() {
+        assert_eq!(
+            install_cmd_from_uninstall("brew uninstall"),
+            Some("brew install".to_string())
+        );
+        assert_eq!(
+            install_cmd_from_uninstall("cargo uninstall"),
+            Some("cargo install".to_string())
+        );
+        assert_eq!(
+            install_cmd_from_uninstall("sudo apt remove -y"),
+            Some("sudo apt install -y".to_string())
+        );
+        assert_eq!(install_cmd_from_uninstall("unknown cmd"), None);
+        assert_eq!(install_cmd_from_uninstall(""), None);
+    }
+
+    #[test]
+    fn test_autoremove_hint() {
+        assert_eq!(autoremove_hint("homebrew"), Some("brew autoremove"));
+        assert_eq!(autoremove_hint("linuxbrew"), Some("brew autoremove"));
+        assert_eq!(autoremove_hint("apt"), Some("sudo apt autoremove"));
+        assert_eq!(autoremove_hint("cargo"), None);
+        assert_eq!(autoremove_hint("npm"), None);
+        assert_eq!(autoremove_hint(""), None);
+    }
+}

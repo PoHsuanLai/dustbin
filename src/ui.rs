@@ -117,3 +117,36 @@ pub fn terminal_fit(overhead: usize) -> usize {
         .map(|(rows, _)| (rows as usize).saturating_sub(overhead))
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1024), "1 KB");
+        assert_eq!(format_bytes(1_048_576), "1.0 MB");
+        assert_eq!(format_bytes(1_073_741_824), "1.0 GB");
+        assert_eq!(format_bytes(1_536_000), "1.5 MB");
+        assert_eq!(format_bytes(11_811_160_064), "11.0 GB");
+    }
+
+    #[test]
+    fn test_truncate_str() {
+        assert_eq!(truncate_str("short", 10), "short");
+        assert_eq!(truncate_str("exactly10!", 10), "exactly10!");
+        assert_eq!(truncate_str("this is way too long", 10), "...oo long");
+    }
+
+    #[test]
+    fn test_shorten_path() {
+        assert_eq!(shorten_path("/opt/homebrew/bin/git"), "brew:git");
+        assert_eq!(
+            shorten_path("/opt/homebrew/Cellar/python@3.13/3.13.11_1/bin/python3"),
+            "brew:python@3.13/3.13.11_1/bin/python3"
+        );
+        assert_eq!(shorten_path("/some/random/path"), "/some/random/path");
+    }
+}
