@@ -206,6 +206,11 @@ impl Daemon {
 }
 
 impl DaemonManager for Daemon {
+    fn check_permissions() -> bool {
+        // Linux fanotify just needs root, no special permissions
+        true
+    }
+
     fn check_available() -> bool {
         if Self::is_fatrace_available() {
             return true;
@@ -280,10 +285,14 @@ impl DaemonManager for Daemon {
                 // OpenRC requires root to install services
                 fs::write(&service_path, &service_content).or_else(|_| {
                     // Try with sudo
-                        let tmp = std::env::temp_dir().join("dusty-openrc");
+                    let tmp = std::env::temp_dir().join("dusty-openrc");
                     fs::write(&tmp, &service_content)?;
                     Command::new("sudo")
-                        .args(["mv", &*tmp.to_string_lossy(), &*service_path.to_string_lossy()])
+                        .args([
+                            "mv",
+                            &*tmp.to_string_lossy(),
+                            &*service_path.to_string_lossy(),
+                        ])
                         .status()?;
                     Command::new("sudo")
                         .args(["chmod", "+x", &*service_path.to_string_lossy()])
@@ -396,25 +405,44 @@ impl DaemonManager for Daemon {
     }
 
     fn setup_instructions() -> &'static str {
+        if Self::is_fatrace_available() {
+            return "The daemon requires root privileges to monitor exec events.";
+        }
         let info = LinuxInfo::detect();
         match info.package_manager {
             PackageManager::Apt => {
-                "fatrace requires root privileges.\nInstall with: sudo apt install fatrace"
+                "fatrace is required but not installed.\nInstall with: sudo apt install fatrace"
             }
             PackageManager::Dnf => {
-                "fatrace requires root privileges.\nInstall with: sudo dnf install fatrace"
+                "fatrace is required but not installed.\nInstall with: sudo dnf install fatrace"
             }
             PackageManager::Pacman => {
-                "fatrace requires root privileges.\nInstall with: sudo pacman -S fatrace"
+                "fatrace is required but not installed.\nInstall with: sudo pacman -S fatrace"
             }
             PackageManager::Zypper => {
-                "fatrace requires root privileges.\nInstall with: sudo zypper install fatrace"
+                "fatrace is required but not installed.\nInstall with: sudo zypper install fatrace"
             }
             PackageManager::Apk => {
                 "fatrace is not available in Alpine repos.\nYou may need to build from source."
             }
-            _ => "fatrace requires root privileges.\nInstall using your system's package manager.",
+            _ => {
+                "fatrace is required but not installed.\nInstall using your system's package manager."
+            }
         }
+    }
+
+    fn log_hint() -> String {
+        "journalctl --user -u dusty".to_string()
+    }
+
+    fn view_logs(lines: usize, follow: bool) -> Result<()> {
+        let mut cmd = Command::new("journalctl");
+        cmd.args(["--user", "-u", "dusty", "-n", &lines.to_string()]);
+        if follow {
+            cmd.arg("-f");
+        }
+        cmd.status().context("Failed to run journalctl")?;
+        Ok(())
     }
 }
 

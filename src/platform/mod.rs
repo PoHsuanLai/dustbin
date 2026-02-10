@@ -34,8 +34,17 @@ pub trait DaemonManager {
     /// Stop and uninstall the daemon
     fn stop_daemon() -> Result<()>;
 
+    /// Check if monitoring has required permissions (e.g. Full Disk Access on macOS)
+    fn check_permissions() -> bool;
+
     /// Get platform-specific setup instructions
     fn setup_instructions() -> &'static str;
+
+    /// Get the log path or command for viewing daemon logs
+    fn log_hint() -> String;
+
+    /// View daemon logs (tail/follow)
+    fn view_logs(lines: usize, follow: bool) -> Result<()>;
 }
 
 /// A dynamic library dependency of a binary

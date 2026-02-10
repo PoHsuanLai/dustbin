@@ -4,137 +4,88 @@
 [![Crates.io](https://img.shields.io/crates/v/dusty.svg)](https://crates.io/crates/dusty)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Find your dusty binaries — track which installed packages you actually use.
+Track which installed packages you actually use. Find the rest, and clean them up.
 
-Ever installed a CLI tool, used it once, and forgot about it? `dusty` tracks every binary execution on your system and shows you which packages are collecting dust.
+```
+❯ dusty stats
 
-## Features
+  2478 binaries tracked across 4 sources
 
-- **Automatic tracking** — Monitors all binary executions in the background
-- **Multi-source support** — Tracks Homebrew, Cargo, npm, pip, apt, and more
-- **Smart reports** — Filter by source, usage count, or staleness
-- **Interactive cleanup** — Select and uninstall unused packages
-- **Cross-platform** — Works on macOS (eslogger) and Linux (fanotify)
+  ■    89  active (5+ uses)
+  ■   113  low (1-4 uses)
+  ■  2276  dusty (never used)
+```
 
-## Installation
+<!-- TODO: add demo video here -->
+
+## Install
 
 ```bash
 cargo install dusty
 ```
 
-## Quick Start
+## Setup
 
 ```bash
-# Check status and start tracking
 dusty status
+```
 
-# View usage statistics
-dusty stats
+This starts the background daemon and tells you if anything else is needed.
 
-# Show dusty (never used) binaries
-dusty report --dust
+**macOS** — Grant Full Disk Access to `/usr/bin/eslogger`:
 
-# Show packages not used in 30 days
-dusty report --stale 30
+> System Settings > Privacy & Security > Full Disk Access > add `/usr/bin/eslogger`
+> (press Cmd+Shift+G in the file picker to type the path)
 
-# Interactive cleanup
-dusty clean
+Then: `sudo dusty start`
+
+**Linux** — Install `fatrace` and run as root:
+
+```bash
+sudo apt install fatrace   # or dnf, pacman, etc.
+sudo dusty start
 ```
 
 ## Usage
+
+```bash
+dusty report --dust          # what's collecting dust?
+dusty report --stale 30      # not used in 30 days
+dusty clean --source homebrew # interactive cleanup
+dusty size --dust             # how much space can I reclaim?
+```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `dusty status` | Show daemon status and tracking info |
-| `dusty stats` | Show summary statistics with visual charts |
-| `dusty report` | Show detailed usage report |
+| `dusty status` | Daemon status and tracking info |
+| `dusty stats` | Summary with visual charts |
+| `dusty report` | Usage report (filter by `--dust`, `--stale`, `--source`, `--low`) |
 | `dusty clean` | Interactively remove unused packages |
+| `dusty size` | Disk space per package |
+| `dusty why <name>` | Explain why a binary is installed |
 | `dusty dupes` | Find duplicate binaries across sources |
 | `dusty deps` | Analyze dynamic library dependencies |
+| `dusty trash` | List trashed packages (`--drop <name>`, `--empty`) |
+| `dusty restore <name>` | Restore a trashed package |
+| `dusty inventory` | List packages from external managers (R, pip, etc.) |
 | `dusty config` | Show or edit configuration |
-| `dusty start` | Manually start the tracking daemon |
-| `dusty stop` | Stop the tracking daemon |
+| `dusty log` | Show daemon logs (`-n`, `--follow`) |
 
-### Report Options
+Most commands support `--json` for scripting and `--all` to bypass terminal height limits.
 
-```bash
-dusty report              # Binaries by usage (fits terminal)
-dusty report --dust       # Only unused binaries (count = 0)
-dusty report --low 5      # Binaries with < 5 uses
-dusty report --stale 30   # Not used in 30 days
-dusty report --source homebrew  # Filter by source
-dusty report --all        # Show all (no limit)
-dusty report --json       # JSON output for scripting
-dusty report --export     # Output uninstall commands
-```
+## Documentation
 
-### Stats
-
-```
-  📦  dusty
-  ────────────────────────────────────────
-
-  Tracking for 45 days
-
-  4435 binaries
-  ██████████████████████████████
-
-  ■    29  active (5+ uses)
-  ■    23  low (1-4 uses)
-  ■  4383  dusty (never used)
-
-  By source
-  ─────────────────────────
-    homebrew  ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪ 3190
-         apt  ▪▪▪▪ 1004
-       cargo  ▪ 43
-```
-
-## Configuration
-
-Config file location:
-- macOS: `~/Library/Application Support/dusty/config.toml`
-- Linux: `~/.config/dusty/config.toml`
-
-```toml
-[scan]
-path = true
-extra_dirs = []
-skip_dirs = ["/usr/bin", "/bin"]
-skip_prefixes = ["/usr/libexec/"]
-ignore_binaries = ["python*-config"]
-
-[[sources]]
-name = "homebrew"
-path = "/opt/homebrew"
-uninstall_cmd = "brew uninstall"
-
-[[sources]]
-name = "cargo"
-path = ".cargo/bin"
-uninstall_cmd = "cargo uninstall"
-```
-
-## How It Works
-
-### macOS
-Uses `eslogger` (Endpoint Security) to monitor process executions. Requires:
-- macOS 13 (Ventura) or later
-- Full Disk Access for your terminal app
-
-### Linux
-Uses `fanotify` via `fatrace` to monitor file access. Requires:
-- `fatrace` package (`sudo apt install fatrace`)
-- Root privileges for monitoring
-
-The daemon runs as a launchd service (macOS) or systemd user service (Linux).
+- [How It Works](docs/how-it-works.md) — architecture, daemon, database
+- [Configuration](docs/configuration.md) — config file reference, sources, scan options
+- [Trash](docs/trash.md) — safe deletion, restore, permanent cleanup
+- [Inventory](docs/inventory.md) — tracking language packages (R, pip, etc.)
 
 ## Requirements
 
-- **macOS**: 13.0+ (Ventura)
-- **Linux**: Kernel 2.6.37+ with fanotify support
+- **macOS**: 13.0+ (Ventura), Full Disk Access for `/usr/bin/eslogger`
+- **Linux**: Kernel 2.6.37+, `fatrace`, root privileges
 - **Rust**: 1.85+ (for building from source)
 
 ## License

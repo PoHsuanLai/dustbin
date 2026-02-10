@@ -151,6 +151,36 @@ pub const RM_RECURSIVE_FLAGS: &[&str] = &["-rf"];
 /// Install root detection anchors (~ expanded to $HOME at runtime)
 pub const INSTALL_ROOT_ANCHORS: &[&str] = &["/opt/", "/usr/local/", "~/"];
 
+/// Trash directory name (under data_local_dir/dusty/)
+pub const TRASH_DIR: &str = "trash";
+
+/// Derive an install command from an uninstall command.
+/// Returns None if no mapping is known.
+pub fn install_cmd_from_uninstall(uninstall_cmd: &str) -> Option<String> {
+    let mappings: &[(&str, &str)] = &[
+        ("brew uninstall", "brew install"),
+        ("sudo apt remove -y", "sudo apt install -y"),
+        ("sudo dnf remove -y", "sudo dnf install -y"),
+        ("sudo pacman -R --noconfirm", "sudo pacman -S --noconfirm"),
+        ("sudo zypper remove -y", "sudo zypper install -y"),
+        ("sudo apk del", "sudo apk add"),
+        ("sudo snap remove", "sudo snap install"),
+        ("flatpak uninstall", "flatpak install"),
+        ("cargo uninstall", "cargo install"),
+        ("npm uninstall -g", "npm install -g"),
+        ("pip uninstall -y", "pip install"),
+        ("nix-env --uninstall", "nix-env --install"),
+        ("bun remove -g", "bun add -g"),
+    ];
+
+    for (uninstall, install) in mappings {
+        if uninstall_cmd == *uninstall {
+            return Some(install.to_string());
+        }
+    }
+    None
+}
+
 /// Editor and pager defaults
 pub const DEFAULT_EDITOR: &str = "vim";
 pub const DEFAULT_PAGER: &str = "less";

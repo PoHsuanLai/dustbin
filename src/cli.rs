@@ -74,6 +74,10 @@ pub enum Commands {
         /// Filter by source (homebrew, cargo, npm, etc.)
         #[arg(long, short)]
         source: Option<String>,
+
+        /// Permanently delete instead of moving to trash
+        #[arg(long)]
+        no_trash: bool,
     },
 
     /// Show or edit configuration
@@ -91,7 +95,7 @@ pub enum Commands {
 
         /// Show expanded details for all duplicates
         #[arg(long, short)]
-        expand: bool,
+        all: bool,
 
         /// Output as JSON (for scripting/nushell)
         #[arg(long)]
@@ -115,6 +119,86 @@ pub enum Commands {
         /// Output as JSON (for scripting/nushell)
         #[arg(long)]
         json: bool,
+    },
+
+    /// Explain why a binary is installed
+    Why {
+        /// Binary name to look up (e.g., "yosys")
+        name: String,
+
+        /// Output as JSON (for scripting/nushell)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show disk space per package
+    Size {
+        /// Show only unused (dusty) packages
+        #[arg(long)]
+        dust: bool,
+
+        /// Filter by source (homebrew, cargo, npm, etc.)
+        #[arg(long, short)]
+        source: Option<String>,
+
+        /// Output as JSON (for scripting/nushell)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List trashed packages
+    Trash {
+        /// Permanently delete a specific trashed package
+        #[arg(long, value_name = "NAME")]
+        drop: Option<String>,
+
+        /// Permanently delete all trashed items
+        #[arg(long)]
+        empty: bool,
+
+        /// Output as JSON (for scripting/nushell)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List packages from external package managers (R, pip, etc.)
+    Inventory {
+        /// Filter by source name
+        #[arg(long, short)]
+        source: Option<String>,
+
+        /// Show full package lists
+        #[arg(long, short)]
+        all: bool,
+
+        /// Output as JSON (for scripting/nushell)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Restore a trashed package
+    Restore {
+        /// Package name to restore
+        name: String,
+    },
+
+    /// Show daemon logs
+    Log {
+        /// Number of lines to show (default: 50)
+        #[arg(long, short = 'n', default_value = "50")]
+        lines: usize,
+
+        /// Follow log output in real time
+        #[arg(long, short)]
+        follow: bool,
+    },
+
+    /// Generate shell completions
+    #[command(hide = true)]
+    Completions {
+        /// Shell to generate completions for (bash, zsh, fish)
+        #[arg(long, value_enum)]
+        shell: clap_complete::Shell,
     },
 
     /// Run the daemon (internal use)

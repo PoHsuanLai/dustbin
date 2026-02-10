@@ -12,6 +12,9 @@ pub struct SourceDef {
     /// Uninstall command (e.g., "brew uninstall", "cargo uninstall")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uninstall_cmd: Option<String>,
+    /// Command that lists installed packages (one per line to stdout)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_cmd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +135,7 @@ impl Config {
                         name: candidate.name.to_string(),
                         path: pattern,
                         uninstall_cmd: candidate.uninstall_cmd.map(|s| s.to_string()),
+                        list_cmd: None,
                     });
                     break;
                 }
@@ -144,6 +148,7 @@ impl Config {
                     name: name.to_string(),
                     path: pattern.to_string(),
                     uninstall_cmd: None,
+                    list_cmd: None,
                 });
             }
         }
@@ -157,6 +162,22 @@ impl Config {
             .iter()
             .find(|s| s.name == source_name)
             .and_then(|s| s.uninstall_cmd.clone())
+    }
+
+    /// Get the list command for a source from config.
+    pub fn get_list_cmd(&self, source_name: &str) -> Option<String> {
+        self.sources
+            .iter()
+            .find(|s| s.name == source_name)
+            .and_then(|s| s.list_cmd.clone())
+    }
+
+    /// Get all sources that have a list_cmd configured.
+    pub fn get_sources_with_list_cmd(&self) -> Vec<&SourceDef> {
+        self.sources
+            .iter()
+            .filter(|s| s.list_cmd.is_some())
+            .collect()
     }
 
     /// Categorize a path to determine its source based on configured patterns
@@ -284,11 +305,13 @@ mod tests {
                 name: "homebrew".to_string(),
                 path: "/opt/homebrew".to_string(),
                 uninstall_cmd: None,
+                list_cmd: None,
             },
             SourceDef {
                 name: "cargo".to_string(),
                 path: ".cargo/bin".to_string(),
                 uninstall_cmd: None,
+                list_cmd: None,
             },
         ];
 

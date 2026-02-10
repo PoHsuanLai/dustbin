@@ -11,9 +11,22 @@ pub struct Database {
 pub struct BinaryRecord {
     pub path: String,
     pub count: i64,
+    pub first_seen: Option<i64>,
     pub last_seen: Option<i64>,
     pub source: Option<String>,
     pub package_name: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct TrashRecord {
+    pub id: i64,
+    pub original_path: String,
+    pub trash_path: Option<String>,
+    pub source: String,
+    pub package_name: String,
+    pub deleted_at: i64,
+    pub method: String,
+    pub restore_cmd: Option<String>,
 }
 
 impl Database {
@@ -28,7 +41,7 @@ impl Database {
         Ok(db)
     }
 
-    fn db_path() -> Result<PathBuf> {
+    pub fn db_path() -> Result<PathBuf> {
         let data_dir = dirs::data_local_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not find local data directory"))?;
         Ok(data_dir.join("dusty").join("dusty.db"))
@@ -74,6 +87,17 @@ impl Database {
             CREATE TABLE IF NOT EXISTS path_aliases (
                 alias_path TEXT PRIMARY KEY,
                 canonical_path TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS trash (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                original_path TEXT NOT NULL,
+                trash_path TEXT,
+                source TEXT NOT NULL,
+                package_name TEXT NOT NULL,
+                deleted_at INTEGER NOT NULL,
+                method TEXT NOT NULL,
+                restore_cmd TEXT
             );
             ",
         )?;
@@ -124,7 +148,7 @@ impl Database {
 
     pub fn get_all_binaries(&self) -> Result<Vec<BinaryRecord>> {
         let mut stmt = self.conn.prepare(
-            "SELECT path, count, last_seen, source, package_name
+            "SELECT path, count, first_seen, last_seen, source, package_name
              FROM binaries
              ORDER BY count DESC",
         )?;
@@ -133,9 +157,10 @@ impl Database {
             Ok(BinaryRecord {
                 path: row.get(0)?,
                 count: row.get(1)?,
-                last_seen: row.get(2)?,
-                source: row.get(3)?,
-                package_name: row.get(4)?,
+                first_seen: row.get(2)?,
+                last_seen: row.get(3)?,
+                source: row.get(4)?,
+                package_name: row.get(5)?,
             })
         })?;
 
@@ -349,5 +374,76 @@ impl Database {
         let rows = stmt.query_map([], |row| row.get(0))?;
         rows.collect::<Result<std::collections::HashSet<_>, _>>()
             .map_err(Into::into)
+    }
+
+    // --- Trash methods ---
+
+    pub fn record_trash(
+        &self,
+        original_path: &str,
+        trash_path: Option<&str>,
+        source: &str,
+        package_name: &str,
+        method: &str,
+        restore_cmd: Option<&str>,
+    ) -> Result<()> {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO trash (original_path, trash_path, source, package_name, deleted_at, method, restore_cmd)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![original_path, trash_path, source, package_name, now, method, restore_cmd],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_trash(&self) -> Result<Vec<TrashRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, original_path, trash_path, source, package_name, deleted_at, method, restore_cmd
+             FROM trash ORDER BY deleted_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TrashRecord {
+                id: row.get(0)?,
+                original_path: row.get(1)?,
+                trash_path: row.get(2)?,
+                source: row.get(3)?,
+                package_name: row.get(4)?,
+                deleted_at: row.get(5)?,
+                method: row.get(6)?,
+                restore_cmd: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn get_trash_by_name(&self, name: &str) -> Result<Vec<TrashRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, original_path, trash_path, source, package_name, deleted_at, method, restore_cmd
+             FROM trash WHERE package_name = ?1 ORDER BY deleted_at DESC",
+        )?;
+        let rows = stmt.query_map(params![name], |row| {
+            Ok(TrashRecord {
+                id: row.get(0)?,
+                original_path: row.get(1)?,
+                trash_path: row.get(2)?,
+                source: row.get(3)?,
+                package_name: row.get(4)?,
+                deleted_at: row.get(5)?,
+                method: row.get(6)?,
+                restore_cmd: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn delete_trash(&self, id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM trash WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn clear_all_trash(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM trash", [])?;
+        Ok(())
     }
 }
