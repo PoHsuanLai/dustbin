@@ -31,12 +31,24 @@ impl ProcessMonitor for Monitor {
     fn start(&mut self) -> Result<Receiver<String>> {
         // Use fatrace to monitor exec events
         // fatrace is a simple CLI wrapper around fanotify
-        let mut child = Command::new("sudo")
-            .args(["fatrace", "-f", "O", "-t"]) // -f O = open events, -t = timestamp
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Failed to spawn fatrace. Install with: sudo apt install fatrace")?;
+        // When running as root (e.g. system service), call fatrace directly.
+        // Otherwise, try sudo (will fail without TTY).
+        let is_root = unsafe { libc::geteuid() } == 0;
+        let mut child = if is_root {
+            Command::new("fatrace")
+                .args(["-f", "O", "-t"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .context("Failed to spawn fatrace. Install with: sudo apt install fatrace")?
+        } else {
+            Command::new("sudo")
+                .args(["fatrace", "-f", "O", "-t"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .context("Failed to spawn fatrace. The daemon requires root privileges.")?
+        };
 
         let stdout = child
             .stdout
@@ -106,27 +118,38 @@ impl Daemon {
     const SERVICE_NAME: &'static str = "dusty";
 
     fn systemd_service_path() -> PathBuf {
+        PathBuf::from("/etc/systemd/system/dusty.service")
+    }
+
+    fn systemd_user_service_path() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("systemd/user/dusty.service")
     }
 
     fn generate_systemd_service(exe_path: &str) -> String {
+        // Get the invoking user's info for the DB path
+        let user = std::env::var("SUDO_USER")
+            .or_else(|_| std::env::var("USER"))
+            .unwrap_or_else(|_| "root".to_string());
+        let home = std::env::var("HOME").unwrap_or_else(|_| format!("/home/{}", user));
+
         format!(
             r#"[Unit]
 Description=Dusty - Track binary usage
-After=default.target
+After=multi-user.target
 
 [Service]
 Type=simple
-ExecStart={} daemon
+ExecStart={exe_path} daemon
 Restart=always
 RestartSec=5
+Environment=HOME={home}
+Environment=USER={user}
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 "#,
-            exe_path
         )
     }
 
@@ -231,7 +254,7 @@ impl DaemonManager for Daemon {
 
         match info.init_system {
             InitSystem::Systemd => Command::new("systemctl")
-                .args(["--user", "is-active", "--quiet", Self::SERVICE_NAME])
+                .args(["is-active", "--quiet", Self::SERVICE_NAME])
                 .status()
                 .map(|s| s.success())
                 .unwrap_or(false),
@@ -254,21 +277,43 @@ impl DaemonManager for Daemon {
 
         match info.init_system {
             InitSystem::Systemd => {
+                // Remove old user service if it exists
+                let user_service = Self::systemd_user_service_path();
+                if user_service.exists() {
+                    Command::new("systemctl")
+                        .args(["--user", "disable", "--now", Self::SERVICE_NAME])
+                        .status()
+                        .ok();
+                    fs::remove_file(&user_service).ok();
+                    Command::new("systemctl")
+                        .args(["--user", "daemon-reload"])
+                        .status()
+                        .ok();
+                }
+
                 let service_path = Self::systemd_service_path();
                 let service_content = Self::generate_systemd_service(exe_path);
 
-                if let Some(parent) = service_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(&service_path, service_content)?;
+                // Write to temp, then sudo mv to /etc/systemd/system/
+                let tmp = std::env::temp_dir().join("dusty.service");
+                fs::write(&tmp, &service_content)?;
 
-                Command::new("systemctl")
-                    .args(["--user", "daemon-reload"])
+                Command::new("sudo")
+                    .args([
+                        "mv",
+                        &*tmp.to_string_lossy(),
+                        &*service_path.to_string_lossy(),
+                    ])
+                    .status()
+                    .context("Failed to install service file (requires sudo)")?;
+
+                Command::new("sudo")
+                    .args(["systemctl", "daemon-reload"])
                     .status()
                     .context("Failed to reload systemd")?;
 
-                let status = Command::new("systemctl")
-                    .args(["--user", "enable", "--now", Self::SERVICE_NAME])
+                let status = Command::new("sudo")
+                    .args(["systemctl", "enable", "--now", Self::SERVICE_NAME])
                     .status()
                     .context("Failed to enable/start service")?;
 
@@ -354,18 +399,21 @@ impl DaemonManager for Daemon {
 
         match info.init_system {
             InitSystem::Systemd => {
-                Command::new("systemctl")
-                    .args(["--user", "disable", "--now", Self::SERVICE_NAME])
+                Command::new("sudo")
+                    .args(["systemctl", "disable", "--now", Self::SERVICE_NAME])
                     .status()
                     .ok();
 
                 let service_path = Self::systemd_service_path();
                 if service_path.exists() {
-                    fs::remove_file(&service_path).ok();
+                    Command::new("sudo")
+                        .args(["rm", "-f", &*service_path.to_string_lossy()])
+                        .status()
+                        .ok();
                 }
 
-                Command::new("systemctl")
-                    .args(["--user", "daemon-reload"])
+                Command::new("sudo")
+                    .args(["systemctl", "daemon-reload"])
                     .status()
                     .ok();
             }
@@ -432,12 +480,12 @@ impl DaemonManager for Daemon {
     }
 
     fn log_hint() -> String {
-        "journalctl --user -u dusty".to_string()
+        "journalctl -u dusty".to_string()
     }
 
     fn view_logs(lines: usize, follow: bool) -> Result<()> {
         let mut cmd = Command::new("journalctl");
-        cmd.args(["--user", "-u", "dusty", "-n", &lines.to_string()]);
+        cmd.args(["-u", "dusty", "-n", &lines.to_string()]);
         if follow {
             cmd.arg("-f");
         }
