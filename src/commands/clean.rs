@@ -602,6 +602,20 @@ pub fn cmd_clean(
                 style("dusty restore <name>").cyan()
             );
         }
+
+        // Show autoremove hints for sources that were cleaned
+        let mut shown = std::collections::HashSet::new();
+        for source in by_source.keys() {
+            if let Some(hint) = defaults::autoremove_hint(source) {
+                if shown.insert(hint) {
+                    println!(
+                        "  {} Run {} to remove orphaned dependencies",
+                        style("◦").dim(),
+                        style(hint).cyan()
+                    );
+                }
+            }
+        }
     }
     println!();
 

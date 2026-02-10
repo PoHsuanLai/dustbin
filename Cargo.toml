@@ -10,7 +10,7 @@ repository = "https://github.com/PoHsuanLai/dusty"
 readme = "README.md"
 keywords = ["cli", "packages", "cleanup", "homebrew", "cargo"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = [".github/", ".claude/", ".DS_Store"]
+exclude = [".github/", ".claude/", ".DS_Store", "assets/", "demo.tape", "docs/"]
 
 [dependencies]
 anyhow = "1.0.101"

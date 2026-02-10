@@ -16,7 +16,7 @@ Track which installed packages you actually use. Find the rest, and clean them u
   ■  2276  dusty (never used)
 ```
 
-<!-- TODO: add demo video here -->
+![demo](assets/demo.gif)
 
 ## Install
 

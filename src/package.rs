@@ -64,6 +64,20 @@ pub fn scan_all_binaries() -> Result<Vec<BinaryScanResult>> {
                 // Try to get package name (for homebrew, resolve symlink)
                 let pkg_name = get_package_name(&bin_path, &bin_name);
 
+                // Refine source: npm globals under homebrew's node should be "npm"
+                let refined_source = if let Ok(link_target) = fs::read_link(&bin_path) {
+                    let target_str = link_target.to_string_lossy();
+                    if target_str.contains("node_modules/") {
+                        "npm".to_string()
+                    } else if target_str.contains("Caskroom/") {
+                        "cask".to_string()
+                    } else {
+                        source.clone()
+                    }
+                } else {
+                    source.clone()
+                };
+
                 // If it's a symlink, resolve to get the real path
                 // (eslogger reports resolved paths, so we need this mapping)
                 let resolved = fs::canonicalize(&bin_path)
@@ -71,7 +85,7 @@ pub fn scan_all_binaries() -> Result<Vec<BinaryScanResult>> {
                     .map(|p| p.to_string_lossy().to_string())
                     .filter(|resolved| resolved != &bin_path_str);
 
-                all_binaries.push((bin_path_str, pkg_name, source.clone(), resolved));
+                all_binaries.push((bin_path_str, pkg_name, refined_source, resolved));
             }
         }
     }

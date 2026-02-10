@@ -83,12 +83,21 @@ fn default_skip_prefixes() -> Vec<String> {
         "/usr/libexec/".to_string(),
         "/System/".to_string(),
         "/Library/Apple/".to_string(),
+        "/target/debug/".to_string(),
+        "/target/release/".to_string(),
+        "/.rustup/toolchains/".to_string(),
     ]
 }
 
 #[cfg(target_os = "linux")]
 fn default_skip_prefixes() -> Vec<String> {
-    vec!["/usr/libexec/".to_string(), "/usr/lib/".to_string()]
+    vec![
+        "/usr/libexec/".to_string(),
+        "/usr/lib/".to_string(),
+        "/target/debug/".to_string(),
+        "/target/release/".to_string(),
+        "/.rustup/toolchains/".to_string(),
+    ]
 }
 
 fn default_sources() -> Vec<SourceDef> {

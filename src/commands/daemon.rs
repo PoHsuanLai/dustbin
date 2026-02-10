@@ -39,7 +39,7 @@ pub fn cmd_daemon() -> Result<()> {
     loop {
         match rx.recv_timeout(heartbeat) {
             Ok(path) => {
-                if should_skip_path(&path) {
+                if should_skip_path(&path, &config) {
                     period_skipped += 1;
                     continue;
                 }
@@ -89,15 +89,16 @@ pub fn cmd_daemon() -> Result<()> {
     Ok(())
 }
 
-fn should_skip_path(path: &str) -> bool {
-    #[cfg(target_os = "macos")]
-    let skip_prefixes: &[&str] = &["/usr/libexec/", "/System/", "/Library/Apple/", "/usr/sbin/"];
-    #[cfg(target_os = "linux")]
-    let skip_prefixes: &[&str] = &["/usr/libexec/", "/usr/sbin/", "/usr/lib/", "/usr/share/"];
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    let skip_prefixes: &[&str] = &["/usr/libexec/", "/usr/sbin/"];
-
+fn should_skip_path(path: &str, config: &config::Config) -> bool {
     let skip_exact = ["/bin/sh", "/bin/bash", "/bin/zsh", "/usr/bin/env"];
 
-    skip_prefixes.iter().any(|p| path.starts_with(p)) || skip_exact.contains(&path)
+    if skip_exact.contains(&path) {
+        return true;
+    }
+
+    config
+        .scan
+        .skip_prefixes
+        .iter()
+        .any(|p| path.starts_with(p.as_str()) || path.contains(p.as_str()))
 }

@@ -181,6 +181,19 @@ pub fn install_cmd_from_uninstall(uninstall_cmd: &str) -> Option<String> {
     None
 }
 
+/// Autoremove commands to clean up orphaned dependencies, keyed by source name.
+pub fn autoremove_hint(source: &str) -> Option<&'static str> {
+    match source {
+        "homebrew" | "linuxbrew" => Some("brew autoremove"),
+        "apt" => Some("sudo apt autoremove"),
+        "dnf" => Some("sudo dnf autoremove"),
+        "pacman" => Some("sudo pacman -Qdtq | sudo pacman -Rns -"),
+        "zypper" => Some("sudo zypper packages --unneeded"),
+        "flatpak" => Some("flatpak uninstall --unused"),
+        _ => None,
+    }
+}
+
 /// Editor and pager defaults
 pub const DEFAULT_EDITOR: &str = "vim";
 pub const DEFAULT_PAGER: &str = "less";
