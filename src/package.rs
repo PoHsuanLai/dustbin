@@ -104,6 +104,16 @@ fn is_executable(path: &Path) -> bool {
     }
 }
 
+/// Extract package name from a Cellar path (e.g. ".../Cellar/python@3.13/3.13.11_1/..." → "python@3.13")
+fn extract_cellar_package(path: &str) -> Option<String> {
+    let after_cellar = path.split("Cellar/").nth(1)?;
+    let pkg = after_cellar.split('/').next()?;
+    if pkg.is_empty() {
+        return None;
+    }
+    Some(pkg.to_string())
+}
+
 /// Try to determine package name from binary path.
 /// Checks Homebrew Cellar symlinks, then install root anchors, then falls back to binary name.
 pub fn get_package_name(bin_path: &Path, default_name: &str) -> String {
@@ -111,18 +121,19 @@ pub fn get_package_name(bin_path: &Path, default_name: &str) -> String {
     if let Ok(resolved) = fs::read_link(bin_path) {
         let resolved_str = resolved.to_string_lossy();
 
-        // Look for Cellar/<package>/ pattern
-        if let Some(cellar_idx) = resolved_str.find("Cellar/") {
-            let after_cellar = &resolved_str[cellar_idx + 7..];
-            if let Some(slash_idx) = after_cellar.find('/') {
-                return after_cellar[..slash_idx].to_string();
-            }
+        if let Some(pkg) = extract_cellar_package(&resolved_str) {
+            return pkg;
         }
+    }
+
+    // Also check the path itself — daemon-recorded paths are already resolved
+    let path_str = bin_path.to_string_lossy();
+    if let Some(pkg) = extract_cellar_package(&path_str) {
+        return pkg;
     }
 
     // For downloaded software in well-known anchors (e.g. /opt/oss-cad-suite/bin/yosys),
     // use the install root directory name as the package name.
-    let path_str = bin_path.to_string_lossy();
     let home = dirs::home_dir()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_default();
